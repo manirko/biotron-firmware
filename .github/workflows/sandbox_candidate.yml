@@ -1,0 +1,78 @@
+name: Sandbox firmware candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Sandbox branch to build
+        required: true
+        default: sandbox/biotron-firmware
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-candidate:
+    if: startsWith(inputs.source_ref, 'sandbox/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PICO_SDK_TAG: 2.3.0
+      FLASH_ID_STARTUP: ${{ github.run_id }}
+      MAJOR_VERSION: 0
+      MINOR_VERSION: 0
+      PATCH_VERSION: ${{ github.run_number }}
+    steps:
+      - name: Checkout exact sandbox ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 1
+
+      - name: Host parser tests
+        run: tests/run_host_tests.sh
+
+      - name: Install pinned build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib python3 build-essential
+
+      - name: Fetch pinned Pico SDK
+        run: |
+          git clone --branch "$PICO_SDK_TAG" --depth 1 \
+            https://github.com/raspberrypi/pico-sdk.git "$RUNNER_TEMP/pico-sdk"
+          git -C "$RUNNER_TEMP/pico-sdk" submodule update --init --depth 1
+
+      - name: Build candidate
+        env:
+          PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2
+
+      - name: Create immutable manifest
+        run: |
+          mkdir -p candidate
+          cp build/biotron.uf2 build/biotron.elf candidate/
+          git rev-parse HEAD > candidate/firmware-commit.txt
+          git -C "$RUNNER_TEMP/pico-sdk" rev-parse HEAD > candidate/pico-sdk-commit.txt
+          arm-none-eabi-gcc --version > candidate/toolchain.txt
+          sha256sum candidate/biotron.uf2 candidate/biotron.elf > candidate/SHA256SUMS
+          {
+            echo "source_ref=${{ inputs.source_ref }}"
+            echo "workflow_run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "pico_sdk_tag=$PICO_SDK_TAG"
+            echo "version=0.0.${{ github.run_number }}-sandbox"
+            echo "NOT_A_RELEASE=true"
+          } > candidate/BUILD-IDENTITY.txt
+
+      - name: Upload candidate without creating a release
+        uses: actions/upload-artifact@v4
+        with:
+          name: biotron-firmware-sandbox-${{ github.run_id }}
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 14
