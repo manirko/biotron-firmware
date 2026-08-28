@@ -8,6 +8,10 @@ on:
         required: true
         default: sandbox/biotron-firmware
         type: string
+      settings_id:
+        description: Persisted settings schema ID (uint32, copied from the rollback firmware)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -19,11 +23,23 @@ jobs:
     timeout-minutes: 20
     env:
       PICO_SDK_TAG: 2.3.0
-      FLASH_ID_STARTUP: ${{ github.run_id }}
+      FLASH_ID_STARTUP: ${{ inputs.settings_id }}
       MAJOR_VERSION: 0
       MINOR_VERSION: 0
       PATCH_VERSION: ${{ github.run_number }}
     steps:
+      - name: Validate sandbox inputs
+        shell: bash
+        run: |
+          if [[ ! "$FLASH_ID_STARTUP" =~ ^[0-9]+$ ]]; then
+            echo "settings_id must be an unsigned decimal integer" >&2
+            exit 1
+          fi
+          if (( FLASH_ID_STARTUP > 4294967295 )); then
+            echo "settings_id must fit uint32" >&2
+            exit 1
+          fi
+
       - name: Checkout exact sandbox ref
         uses: actions/checkout@v4
         with:
@@ -65,6 +81,7 @@ jobs:
             echo "source_ref=${{ inputs.source_ref }}"
             echo "workflow_run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "pico_sdk_tag=$PICO_SDK_TAG"
+            echo "settings_id=$FLASH_ID_STARTUP"
             echo "version=0.0.${{ github.run_number }}-sandbox"
             echo "NOT_A_RELEASE=true"
           } > candidate/BUILD-IDENTITY.txt
