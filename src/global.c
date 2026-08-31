@@ -28,9 +28,10 @@ static uint8_t requested_calibration_nonce = 0;
 typedef struct {
     uint8_t tick;
     uint8_t note;
-    uint8_t velocity;
     uint8_t duration_ticks;
 } calibration_cue_event_t;
+
+#define CALIBRATION_MIDI_VELOCITY 64
 
 /*
  * 100 ms ticks: a quiet cadence with a clear opening, high point and final
@@ -39,9 +40,8 @@ typedef struct {
  * used during Stabilization.
  */
 static const calibration_cue_event_t CALIBRATION_CUE[] = {
-        {3, 64, 22, 3}, {8, 65, 24, 3}, {13, 67, 26, 4},
-        {18, 72, 28, 4}, {24, 71, 26, 3}, {29, 67, 24, 3},
-        {34, 62, 22, 4}, {40, 60, 18, 9},
+        {3, 64, 3}, {8, 65, 3}, {13, 67, 4}, {18, 72, 4},
+        {24, 71, 3}, {29, 67, 3}, {34, 62, 4}, {40, 60, 9},
 };
 static uint8_t calibration_cue_index = 0;
 static uint8_t calibration_cue_active_note = 0xff;
@@ -67,7 +67,7 @@ static void service_calibration_cue(uint8_t tick) {
     const calibration_cue_event_t *event =
             &CALIBRATION_CUE[calibration_cue_index];
     if (event->tick != tick) return;
-    note_on(settings.plant_channel, event->note, event->velocity);
+    note_on(settings.plant_channel, event->note, CALIBRATION_MIDI_VELOCITY);
     calibration_cue_active_note = event->note;
     calibration_cue_note_off_tick = tick + event->duration_ticks;
     calibration_cue_index++;

@@ -201,7 +201,7 @@ int main(void) {
     assert(calibration_messages[5][4] == BIOTRON_RECALIBRATE_READY);
 
     const uint8_t expected_notes[] = {64, 65, 67, 72, 71, 67, 62, 60};
-    const uint8_t expected_velocities[] = {22, 24, 26, 28, 26, 24, 22, 18};
+    const uint8_t expected_velocities[] = {64, 64, 64, 64, 64, 64, 64, 64};
     assert(calibration_note_count == sizeof expected_notes * 2);
     for (size_t i = 0; i < sizeof expected_notes; ++i) {
         const size_t on = i * 2;
