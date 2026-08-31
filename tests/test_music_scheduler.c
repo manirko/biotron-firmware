@@ -29,6 +29,7 @@ static size_t play_count = 0;
 static size_t critical_entries = 0;
 static size_t critical_exits = 0;
 static size_t stop_midi_count = 0;
+static bool fail_next_schedule = false;
 static bool plant_ready = false;
 static uint32_t plant_frequency = 0;
 static uint8_t calibration_messages[12][6];
@@ -46,6 +47,10 @@ alarm_id_t add_alarm_in_us(int64_t delay_us, alarm_callback_t callback,
     scheduled_callback = callback;
     scheduled_user_data = user_data;
     ++schedule_count;
+    if (fail_next_schedule) {
+        fail_next_schedule = false;
+        return -1;
+    }
     return scheduled_id;
 }
 
@@ -150,6 +155,32 @@ int main(void) {
     assert(play_count == 2);
     assert(critical_entries == critical_exits);
     assert(critical_entries >= 2);
+
+    // Legacy Settings may send one or several identical batch boundaries.
+    // Every boundary is idempotent and leaves an Active device scheduled.
+    const size_t before_boundaries = schedule_count;
+    load_settings();
+    load_settings();
+    assert(schedule_count == before_boundaries + 2);
+    assert(fire_alarm() > 0);
+    service_music_alarm();
+    assert(play_count == 3);
+
+    // A transient alarm allocation failure must not create the field failure
+    // "USB responds, sensors move, but no notes". The next plant sample heals
+    // the internal scheduler while keeping the device in Active state.
+    fail_next_schedule = true;
+    start_music_alarm();
+    const size_t before_recovery = schedule_count;
+    plant_ready = true;
+    plant_frequency = MIN_FREQ + 1;
+    status = Active;
+    status_loop();
+    assert(status == Active);
+    assert(schedule_count == before_recovery + 1);
+    assert(fire_alarm() > 0);
+    service_music_alarm();
+    assert(play_count == 4);
 
     // A partially completed Sleep window must not leak into a requested
     // recalibration. The command also stops notes/alarm work and clears only

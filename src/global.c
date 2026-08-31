@@ -203,19 +203,11 @@ void reset_bpm() {
 
 
 void load_settings() {
-    static bool is_stopped = false;
-    if (is_stopped) {
-        if (status == Active) {
-            start_music_alarm();
-        }
-
-    } else {
-        if (status == Active) {
-            stop_music_alarm();
-            reset_plant_note_off();
-        }
-    }
-    is_stopped = !is_stopped;
+    // Legacy Settings sends the same boundary command before and after a
+    // batch. A lost second command used to leave an otherwise healthy device
+    // permanently silent. Restart instead; repeated boundaries are harmless
+    // and live notes continue with the latest timing.
+    reset_bpm();
 }
 
 void start_plant_calibration(uint8_t request_nonce) {
@@ -339,6 +331,13 @@ void status_loop() {
                 stop_midi();
                 plsdk_printf("[+] Change status: Active -> Sleep\n");
                 return;
+            }
+
+            // Active means the internal clock must be running. Recover from a
+            // failed/cancelled alarm instead of staying USB-responsive but
+            // musically silent until a power cycle or recalibration.
+            if (status == Active && play_music_alarm_id < 0) {
+                start_music_alarm();
             }
 
             break;
