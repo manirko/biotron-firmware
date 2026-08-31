@@ -31,7 +31,7 @@ typedef struct {
     uint8_t duration_ticks;
 } calibration_cue_event_t;
 
-#define CALIBRATION_MIDI_VELOCITY 64
+#define CALIBRATION_MIDI_VELOCITY 24
 
 /*
  * 100 ms ticks: a quiet cadence with a clear opening, high point and final
@@ -73,11 +73,12 @@ static void service_calibration_cue(uint8_t tick) {
     calibration_cue_index++;
 }
 
-static void report_requested_calibration(uint8_t state) {
-    if (!requested_calibration_active) return;
+static void report_calibration_state(uint8_t state) {
+    const uint8_t nonce = requested_calibration_active ?
+            requested_calibration_nonce : 0;
     const uint8_t response[] = {
             SYS_EX_START, PLAYTRONICA_SYS_KEY,
-            BIOTRON_RECALIBRATE_COMMAND, requested_calibration_nonce,
+            BIOTRON_RECALIBRATE_COMMAND, nonce,
             state, SYS_EX_END,
     };
     // The browser may have either logical cable selected. Report on both
@@ -233,7 +234,7 @@ void start_plant_calibration(uint8_t request_nonce) {
     status = Sleep;
     requested_calibration_nonce = request_nonce & 0x7f;
     requested_calibration_active = true;
-    report_requested_calibration(BIOTRON_RECALIBRATE_WAITING);
+    report_calibration_state(BIOTRON_RECALIBRATE_WAITING);
 }
 
 
@@ -265,7 +266,7 @@ void status_loop() {
                 status = Stabilization;
                 status_counter = 0;
                 reset_calibration_cue();
-                report_requested_calibration(BIOTRON_RECALIBRATE_MEASURING);
+                report_calibration_state(BIOTRON_RECALIBRATE_MEASURING);
                 plsdk_printf("[+] Change status: Sleep -> Stab\n");
             }
             break;
@@ -289,7 +290,7 @@ void status_loop() {
                 last_freq = 0;
                 reset_calibration_cue();
                 status = Sleep;
-                report_requested_calibration(BIOTRON_RECALIBRATE_WAITING);
+                report_calibration_state(BIOTRON_RECALIBRATE_WAITING);
                 plsdk_printf("[+] Change status: Stab -> Sleep\n");
                 break;
             }
@@ -303,7 +304,7 @@ void status_loop() {
                     start_music_alarm();
                 }
                 status = active_status;
-                report_requested_calibration(BIOTRON_RECALIBRATE_READY);
+                report_calibration_state(BIOTRON_RECALIBRATE_READY);
                 plsdk_printf("[+] Change status: Stab -> Active\n");
             }
 

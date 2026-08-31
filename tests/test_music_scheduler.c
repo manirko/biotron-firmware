@@ -201,7 +201,7 @@ int main(void) {
     assert(calibration_messages[5][4] == BIOTRON_RECALIBRATE_READY);
 
     const uint8_t expected_notes[] = {64, 65, 67, 72, 71, 67, 62, 60};
-    const uint8_t expected_velocities[] = {64, 64, 64, 64, 64, 64, 64, 64};
+    const uint8_t expected_velocities[] = {24, 24, 24, 24, 24, 24, 24, 24};
     assert(calibration_note_count == sizeof expected_notes * 2);
     for (size_t i = 0; i < sizeof expected_notes; ++i) {
         const size_t on = i * 2;
@@ -213,6 +213,27 @@ int main(void) {
         assert(calibration_notes[off][0] == 0);
         assert(calibration_notes[off][1] == settings.plant_channel);
         assert(calibration_notes[off][2] == expected_notes[i]);
+    }
+
+    /* Automatic startup calibration must identify itself too. A zero nonce
+     * distinguishes it from an explicit browser request. */
+    calibration_message_count = 0;
+    calibration_note_count = 0;
+    status = Sleep;
+    active_status = Active;
+    for (size_t i = 0; i < STABILIZATION_COUNTER; ++i) status_loop();
+    assert(status == Stabilization);
+    assert(calibration_message_count == 2);
+    for (size_t cable = 0; cable < 2; ++cable) {
+        assert(calibration_messages[cable][3] == 0);
+        assert(calibration_messages[cable][4] == BIOTRON_RECALIBRATE_MEASURING);
+    }
+    for (size_t i = 0; i <= AVERAGE_COUNTER; ++i) status_loop();
+    assert(status == Active);
+    assert(calibration_message_count == 4);
+    for (size_t cable = 2; cable < 4; ++cable) {
+        assert(calibration_messages[cable][3] == 0);
+        assert(calibration_messages[cable][4] == BIOTRON_RECALIBRATE_READY);
     }
 
     /* Losing the sensor mid-phrase must emit the matching Note Off. */
