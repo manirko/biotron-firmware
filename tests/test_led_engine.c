@@ -12,12 +12,15 @@ static led_frame_t render(led_engine_t *engine, uint32_t now_ms) {
 }
 
 static void assert_bounded(const led_frame_t *frame) {
+    uint32_t green_sum = 0;
     for (uint8_t lane = 0; lane < LED_ENGINE_LANES; ++lane) {
         assert(frame->blue[lane] <= LED_ENGINE_MAX_LEVEL);
         for (uint8_t source = 0; source < LED_ENGINE_SOURCE_COUNT; ++source) {
             assert(frame->green[source][lane] <= LED_ENGINE_MAX_LEVEL);
+            green_sum += frame->green[source][lane];
         }
     }
+    assert(green_sum <= LED_ENGINE_GREEN_BUDGET);
 }
 
 static void test_source_pitch_and_velocity(void) {
@@ -89,6 +92,37 @@ static void test_retrigger_decay_and_beat(void) {
     }
 }
 
+static void test_organic_spread_reaches_every_zone(void) {
+    led_engine_t engine;
+    led_engine_init(&engine, 0);
+    (void)render(&engine, 0);
+    led_engine_note_on(&engine, LED_SOURCE_PLANT, 36, 127, 36, 60);
+    const led_frame_t origin = render(&engine, 0);
+    assert(origin.green[LED_SOURCE_PLANT][0] > 0);
+    assert(origin.green[LED_SOURCE_PLANT][1] == 0);
+    assert(origin.green[LED_SOURCE_LIGHT][0] == 0);
+    const led_frame_t spreading = render(&engine, LED_ENGINE_TICK_MS);
+    assert(spreading.green[LED_SOURCE_PLANT][1] > 0);
+    assert(spreading.green[LED_SOURCE_LIGHT][0] > 0);
+    assert(spreading.blue[0] > 0);
+    const led_frame_t frame = render(&engine, 32);
+    assert_bounded(&frame);
+    for (uint8_t source = 0; source < LED_ENGINE_SOURCE_COUNT; ++source) {
+        for (uint8_t lane = 0; lane < LED_ENGINE_LANES; ++lane) {
+            assert(frame.green[source][lane] > 0);
+        }
+    }
+    assert(frame.green[LED_SOURCE_PLANT][0] >
+           frame.green[LED_SOURCE_PLANT][1]);
+    assert(frame.green[LED_SOURCE_PLANT][1] >
+           frame.green[LED_SOURCE_PLANT][2]);
+    assert(frame.green[LED_SOURCE_PLANT][0] >
+           frame.green[LED_SOURCE_LIGHT][0]);
+    assert(frame.blue[0] > 0);
+    assert(frame.blue[0] == frame.blue[1]);
+    assert(frame.blue[1] == frame.blue[2]);
+}
+
 static uint32_t repeated_note_brightness(uint32_t interval_ms) {
     led_engine_t engine;
     led_engine_init(&engine, 0);
@@ -126,7 +160,7 @@ static void test_breath_timing_contract(void) {
     const uint16_t release = render(&engine, 320).green[LED_SOURCE_PLANT][1];
     const uint16_t dark = render(&engine, 1200).green[LED_SOURCE_PLANT][1];
     assert(first > 0 && first < attack);
-    assert(attack > LED_ENGINE_MAX_LEVEL * 4u / 5u);
+    assert(attack > LED_ENGINE_MAX_LEVEL / 3u);
     assert(release > 0 && release < attack);
     assert(dark == 0);
 
@@ -213,6 +247,7 @@ static void test_time_wrap_and_random_stress(void) {
 int main(void) {
     test_source_pitch_and_velocity();
     test_retrigger_decay_and_beat();
+    test_organic_spread_reaches_every_zone();
     test_note_rate_shapes_brightness();
     test_breath_timing_contract();
     test_frame_drop_does_not_change_envelope();

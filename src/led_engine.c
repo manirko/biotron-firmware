@@ -10,6 +10,8 @@
 #define BEAT_TARGET_DECAY_FLOOR UINT16_C(256)
 #define BEAT_LEVEL_DECAY_FLOOR UINT16_C(96)
 #define MAX_DECAY_STEPS UINT32_C(256)
+#define WEIGHT_SCALE UINT16_C(256)
+#define NOTE_BLUE_WEIGHT UINT16_C(12)
 
 _Static_assert(sizeof(led_engine_t) <= 128,
                "LED engine must remain a small static main-loop state");
@@ -25,6 +27,22 @@ static uint16_t note_attack(uint8_t velocity) {
     const uint32_t dynamic_range = LED_ENGINE_MAX_LEVEL - NOTE_MIN_ATTACK;
     return velocity == 0 ? 0 : (uint16_t)(NOTE_MIN_ATTACK +
             (value * value * dynamic_range) / UINT32_C(16129));
+}
+
+static uint16_t scaled_attack(uint16_t attack, uint16_t weight) {
+    return (uint16_t)(((uint32_t)attack * weight +
+            WEIGHT_SCALE / 2u) / WEIGHT_SCALE);
+}
+
+static uint16_t spread_weight(bool same_source, uint8_t distance) {
+    static const uint8_t same_source_weights[LED_ENGINE_LANES] = {
+        112, 34, 14,
+    };
+    static const uint8_t reflected_weights[LED_ENGINE_LANES] = {
+        38, 16, 8,
+    };
+    return same_source ? same_source_weights[distance] :
+            reflected_weights[distance];
 }
 
 static uint8_t pitch_lane(uint8_t note, uint8_t minimum,
@@ -98,12 +116,30 @@ void led_engine_note_on(led_engine_t *engine, led_source_t source,
         return;
     }
     const uint8_t lane = pitch_lane(note, minimum_note, maximum_note);
+    const uint16_t attack = note_attack(velocity);
+    for (uint8_t destination_source = 0;
+         destination_source < LED_ENGINE_SOURCE_COUNT;
+         ++destination_source) {
+        for (uint8_t destination_lane = 0;
+             destination_lane < LED_ENGINE_LANES;
+             ++destination_lane) {
+            const uint8_t distance = destination_lane > lane ?
+                    destination_lane - lane : lane - destination_lane;
+            const uint16_t addition = scaled_attack(attack,
+                    spread_weight(destination_source == source_index,
+                                  distance));
+            uint16_t *destination =
+                    &engine->green_target[destination_source][destination_lane];
+            *destination = saturating_add(*destination, addition);
+        }
+    }
     uint16_t *target = &engine->green_target[source_index][lane];
     uint16_t *level = &engine->green_level[source_index][lane];
-    *target = saturating_add(*target, note_attack(velocity));
     /* A quick, bounded inhale avoids a hard LED edge. Repeated notes add to
        the target, so faster playing naturally becomes brighter and fuller. */
     *level = approach_once(*level, *target, 2, 6, NOTE_LEVEL_DECAY_FLOOR);
+    engine->beat_target = saturating_add(engine->beat_target,
+            scaled_attack(attack, NOTE_BLUE_WEIGHT));
     engine->dirty = true;
 }
 
@@ -156,10 +192,19 @@ bool led_engine_service(led_engine_t *engine, uint32_t now_ms,
     }
 
     if (!engine->dirty) return false;
+    uint32_t green_sum = 0;
+    for (uint8_t source = 0; source < LED_ENGINE_SOURCE_COUNT; ++source) {
+        for (uint8_t lane = 0; lane < LED_ENGINE_LANES; ++lane) {
+            green_sum += engine->green_level[source][lane];
+        }
+    }
     for (uint8_t lane = 0; lane < LED_ENGINE_LANES; ++lane) {
         frame->blue[lane] = engine->beat_level;
         for (uint8_t source = 0; source < LED_ENGINE_SOURCE_COUNT; ++source) {
-            frame->green[source][lane] = engine->green_level[source][lane];
+            const uint16_t level = engine->green_level[source][lane];
+            frame->green[source][lane] = green_sum > LED_ENGINE_GREEN_BUDGET ?
+                    (uint16_t)(((uint64_t)level * LED_ENGINE_GREEN_BUDGET) /
+                               green_sum) : level;
         }
     }
     engine->dirty = false;

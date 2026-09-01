@@ -117,9 +117,24 @@ static void test_beat_and_mute_domains(void) {
     assert(brightness(0) == beat);
 }
 
+static void test_note_reaches_all_physical_zones(void) {
+    reset_fixture();
+    led_music_note_on(LED_SOURCE_PLANT, 48, 127);
+    now_us = 32000;
+    led_loop();
+    const uint8_t green_pins[] = {3, 4, 9, 10, 11, 14};
+    for (size_t pin = 0; pin < sizeof(green_pins); ++pin) {
+        assert(brightness(green_pins[pin]) > 0);
+    }
+    assert(brightness(0) > 0);
+    assert(brightness(1) > 0);
+    assert(brightness(2) > 0);
+}
+
 int main(void) {
     test_spatial_pin_map_and_polarity();
     test_beat_and_mute_domains();
+    test_note_reaches_all_physical_zones();
     puts("led_adapter: A06-A08 pins, polarity, beat and mute passed");
     return 0;
 }
