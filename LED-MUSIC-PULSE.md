@@ -99,3 +99,28 @@ constraints and require separate board profiles and artifacts.
 Tune pitch, velocity, decay or beat constants only in `src/led_engine.c`. Keep
 pin order and polarity only in `src/leds.c`. Add a deterministic engine test for
 every changed rule, then repeat the OFF byte-identity check and both ARM builds.
+
+## Next phase — calibration must push people away
+
+Requested by Andrey 2026-09-04 during the live sound test.
+
+Calibration measures the plant's own baseline. A human standing next to the
+device is part of the measured capacitance, so a person who keeps touching or
+hovering over the plant silently poisons the baseline and every note that
+follows. Today calibration keeps its old LED behavior (see "User-visible
+language"), which does not tell anybody to move.
+
+Requirement: during calibration the LEDs must read as a **repelling** signal —
+step back, hands off — not as decoration. Stronger and more insistent than the
+musical pulse: high contrast against the note engine's green/blue language,
+clearly not a "playing" state, and unmistakable from across the room.
+
+Open before implementation:
+- Which visual language means "step away" without a manual — colour, rate,
+  travelling direction, or a full-ring warning.
+- Whether it also has to end with an explicit "done, come back" cue.
+- Current limits: this must not raise peak or aggregate LED current beyond the
+  electrical check in the release gate (item 7).
+
+Acceptance: a person who has never seen the device steps back during
+calibration without being told, and the measured baseline is stable.
