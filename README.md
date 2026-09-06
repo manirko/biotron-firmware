@@ -40,8 +40,7 @@
 
 ## Developer quick start
 
-Maintainers working on the compatible `1.8.3` stabilization should start with
-[`DEVELOPING.md`](DEVELOPING.md). It explains the runtime ownership model,
+Maintainers should start with [`DEVELOPING.md`](DEVELOPING.md). It explains the runtime ownership model,
 compatibility rules, commit stack, exact build identity, test map and the
 boundary between firmware, Windows/REAPER, offline Settings and Help.
 The optional A06-A08 note-and-beat light experiment is documented separately in
@@ -51,9 +50,12 @@ The optional A06-A08 note-and-beat light experiment is documented separately in
 ./tests/run_host_tests.sh
 ```
 
-Current candidate code is `cf264aa`; later commits on the safety branch are
-tests/docs/tooling unless a new immutable candidate is explicitly declared.
-Passing host tests does not by itself authorize a merge or release.
+`cf264aa` is the last declared `1.8.3` compatibility candidate. Later commits
+on the `codex/*` branches are 1.9.x team-beta code (current `1.9.8 beta-08`,
+`7471707`), not a customer candidate; the next release is planned as `2.0.0`.
+CI runs the host suite on every push and pull request
+(`.github/workflows/pull_request_ci.yml`). Passing host tests does not by
+itself authorize a merge or release.
 
 
 

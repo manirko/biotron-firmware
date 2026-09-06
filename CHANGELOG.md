@@ -1,6 +1,25 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased — 1.9.x team beta on `codex/*` branches (not a customer candidate)
+
+Current team beta: `1.9.8 beta-08` (`7471707`), bench unit only. Planned next
+release: `2.0.0`. Step-by-step evidence lives in `TEST-ARTIFACT-1.9.*.md`.
+
+### Added
+
+- read-only MIDI/USB health diagnostics with bounded counters (SysEx query `124`);
+- safe runtime plant recalibration with a quiet, performance-level cue (SysEx `123`);
+- self-healing silent music scheduler;
+- experimental Music + Pulse LED engine with breath envelope and zone spread
+  (`BIOTRON_LED_MUSIC_PULSE`, off by default);
+- resolved Biotron SysEx command collision; removed redundant settings erase.
+
+### CI
+
+- host suite runs on every push/pull request and before the historical
+  pre-release build (`echo "done!"` placeholder removed).
+
 ## Unreleased — compatible 1.8.3 stabilization candidate
 
 This section describes candidate `cf264aa`; it is not a published release.

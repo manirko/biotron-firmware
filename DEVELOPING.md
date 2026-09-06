@@ -6,9 +6,15 @@ Read it before changing MIDI, USB, settings, timers or BOOT.
 ## Current branch in one minute
 
 - Shipping source baseline: tag `1.8.2`, commit `67920c2`.
-- Exact production candidate: `cf264aa` (`1.8.3`).
-- Commits after `cf264aa` are tests/docs/tooling only unless a new candidate is
-  explicitly declared and rebuilt.
+- Last declared compatibility candidate: `cf264aa` (`1.8.3`); its evidence is
+  below and in `CHANGELOG.md`.
+- Since `cf264aa` the `codex/*` branches carry 1.9.x team-beta code: MIDI/USB
+  health diagnostics, runtime recalibration with a quiet cue, self-healing
+  music scheduler, the Music + Pulse LED engine with zone spread. Current team
+  beta is `1.9.8 beta-08` (`7471707`), flashed on the bench unit only. It is
+  not a customer candidate; the next release is planned as `2.0.0` (project
+  roadmap). A candidate exists only when it is explicitly declared and rebuilt
+  with pinned identity.
 - F1 is a compatibility maintenance release. Protocol v2, CRC/A-B storage,
   new USB identity and expanded diagnostics are later releases.
 - Branch `codex/biotron-p1-midi-diagnostics` is a post-F1 review branch. It
@@ -103,6 +109,12 @@ Run the complete host suite first:
 It compiles 17 production-linked test groups twice: ASan/UBSan and optimized
 `-O2`, plus source/ABI/descriptor contracts. A focused test is useful while
 editing, but the full script is the pre-commit gate.
+
+CI runs the same script on every push and pull request
+(`.github/workflows/pull_request_ci.yml`: host suite, then a pinned Pico SDK
+build that uploads a `NOT_A_RELEASE` artifact). The historical
+`versioning.yml` pre-release path also runs the host suite before
+`make release`; a red suite blocks the pre-release.
 
 Build with a pinned Pico SDK/toolchain and explicit identity. Never use a build
 timestamp as the settings ID:
