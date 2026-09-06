@@ -1,0 +1,106 @@
+# Source: projects/biotron-paul-7818/proposals/firmware-pull-request-ci.yml (reviewed 2026-08-28 for 0e318a8).
+# Installed 2026-09-06 with three edits: push trigger on every branch, CC=clang for the host suite,
+# candidate version 1.9.8. Identity values stay owner-reviewed; this workflow never releases.
+name: Firmware candidate checks
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-candidate-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-and-pico-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PICO_SDK_COMMIT: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+      BIOTRON_FLASH_ID: 1765723554
+      BIOTRON_VERSION_MAJOR: 1
+      BIOTRON_VERSION_MINOR: 9
+      BIOTRON_VERSION_PATCH: 8
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run deterministic host tests
+        env:
+          CC: clang
+        run: |
+          test -x tests/run_host_tests.sh
+          tests/run_host_tests.sh
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib ninja-build python3
+
+      - name: Fetch exact Pico SDK commit
+        run: |
+          git init "$RUNNER_TEMP/pico-sdk"
+          git -C "$RUNNER_TEMP/pico-sdk" remote add origin \
+            https://github.com/raspberrypi/pico-sdk.git
+          git -C "$RUNNER_TEMP/pico-sdk" fetch --depth 1 origin "$PICO_SDK_COMMIT"
+          git -C "$RUNNER_TEMP/pico-sdk" checkout --detach FETCH_HEAD
+          git -C "$RUNNER_TEMP/pico-sdk" submodule update --init --depth 1
+          test "$(git -C "$RUNNER_TEMP/pico-sdk" rev-parse HEAD)" = "$PICO_SDK_COMMIT"
+
+      - name: Build exact candidate
+        env:
+          PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DBIOTRON_FLASH_ID="$BIOTRON_FLASH_ID" \
+            -DBIOTRON_VERSION_MAJOR="$BIOTRON_VERSION_MAJOR" \
+            -DBIOTRON_VERSION_MINOR="$BIOTRON_VERSION_MINOR" \
+            -DBIOTRON_VERSION_PATCH="$BIOTRON_VERSION_PATCH" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2
+          test -s build/biotron.uf2
+          test -s build/biotron.elf
+          test -z "$(git status --short --untracked-files=no)"
+
+      - name: Create evidence manifest
+        run: |
+          mkdir -p candidate
+          cp build/biotron.uf2 build/biotron.elf candidate/
+          git rev-parse HEAD > candidate/firmware-commit.txt
+          git -C "$RUNNER_TEMP/pico-sdk" rev-parse HEAD > candidate/pico-sdk-commit.txt
+          arm-none-eabi-gcc --version > candidate/toolchain.txt
+          cmake --version > candidate/cmake.txt
+          dpkg-query -W \
+            build-essential cmake gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib ninja-build python3 \
+            > candidate/debian-packages.txt
+          sha256sum candidate/biotron.uf2 candidate/biotron.elf \
+            > candidate/SHA256SUMS
+          {
+            echo "repository=${{ github.repository }}"
+            echo "workflow_run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "pico_sdk_commit=$PICO_SDK_COMMIT"
+            echo "settings_compatibility_id=$BIOTRON_FLASH_ID"
+            echo "candidate_version=$BIOTRON_VERSION_MAJOR.$BIOTRON_VERSION_MINOR.$BIOTRON_VERSION_PATCH"
+            echo "NOT_A_RELEASE=true"
+          } > candidate/BUILD-IDENTITY.txt
+
+      - name: Upload test artifact only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: biotron-test-candidate-${{ github.run_id }}
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 14

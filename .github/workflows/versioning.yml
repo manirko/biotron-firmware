@@ -48,6 +48,11 @@ jobs:
           separator: '.'
           maxsplit: 3
           
+      - name: "Host test suite (gate)"
+        run: |
+          test -x tests/run_host_tests.sh
+          CC=clang tests/run_host_tests.sh
+
       - name: "Build Firmware"
         run: |
           make release MAJOR_VERSION=${{ steps.split.outputs._0 }} \
@@ -57,10 +62,6 @@ jobs:
       - name: "Rename Firmware"
         run: cp output/*.uf2 ${{ github.event.repository.name }}_${{ steps.newtag.outputs.TAG_NAME }}.uf2
 
-      - name: "Build & test"
-        run: |
-          echo "done!"
-          
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
