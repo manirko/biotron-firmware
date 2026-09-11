@@ -17,6 +17,7 @@ typedef struct {
     uint8_t kind;
     uint8_t channel;
     uint8_t note;
+    uint8_t velocity;
 } midi_log_entry_t;
 
 enum {
@@ -51,9 +52,11 @@ static uint8_t last_led_note = 0;
 static uint8_t last_led_velocity = 0;
 static uint16_t light_adc = 1600;
 
-static void log_midi(uint8_t kind, uint8_t channel, uint8_t note) {
+static void log_midi(uint8_t kind, uint8_t channel, uint8_t note,
+                     uint8_t velocity) {
     assert(midi_log_len < sizeof midi_log / sizeof midi_log[0]);
-    midi_log[midi_log_len++] = (midi_log_entry_t){kind, channel, note};
+    midi_log[midi_log_len++] =
+            (midi_log_entry_t){kind, channel, note, velocity};
 }
 
 static size_t count_event(uint8_t kind, uint8_t channel, uint8_t note) {
@@ -111,21 +114,20 @@ int calculate_note_by_scale(uint8_t start_note, int counter,
 }
 
 void note_on(uint8_t channel, uint8_t note, uint8_t velocity) {
-    (void)velocity;
-    log_midi(LOG_NOTE_ON, channel, note);
+    log_midi(LOG_NOTE_ON, channel, note, velocity);
 }
 
 void note_off(uint8_t channel, uint8_t note) {
-    log_midi(LOG_NOTE_OFF, channel, note);
+    log_midi(LOG_NOTE_OFF, channel, note, 0u);
 }
 
 void change_pitch(uint8_t channel, uint8_t lsb, uint8_t msb) {
     (void)lsb;
-    log_midi(LOG_PITCH, channel, msb);
+    log_midi(LOG_PITCH, channel, msb, 0u);
 }
 
 void stop_all_notes(uint8_t channel) {
-    log_midi(LOG_ALL_NOTES_OFF, channel, 0);
+    log_midi(LOG_ALL_NOTES_OFF, channel, 0, 0u);
 }
 
 static void reset_fixture(void) {
@@ -314,6 +316,24 @@ static void test_debussy_adapter_is_bounded_and_stops_cleanly(void) {
     assert(note_offs >= note_ons);
 }
 
+static void test_debussy_mix_controls_reach_midi_adapter(void) {
+    reset_fixture();
+    debussy_control.mode = DEBUSSY_MODE_ENABLED;
+    debussy_control.texture = 0u;
+    debussy_control.pedal_level = 25u;
+    debussy_control.colour_level = 0u;
+    debussy_runtime_reset();
+    play_music(4000);
+
+    size_t note_ons = 0u;
+    for (size_t i = 0; i < midi_log_len; ++i) {
+        if (midi_log[i].kind != LOG_NOTE_ON) continue;
+        ++note_ons;
+        assert(midi_log[i].velocity == 25u);
+    }
+    assert(note_ons == 1u);
+}
+
 int main(void) {
     test_identity_round_trip();
     test_alarm_keeps_exact_note_identity();
@@ -325,6 +345,7 @@ int main(void) {
     test_plant_mute_keeps_visual_feedback();
     test_light_pitch_targets_the_plant_channel();
     test_debussy_adapter_is_bounded_and_stops_cleanly();
+    test_debussy_mix_controls_reach_midi_adapter();
     puts("note_lifecycle: identity, replacement, Clock, LED and failure passed");
     return 0;
 }

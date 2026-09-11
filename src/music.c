@@ -31,6 +31,11 @@ DebussyControl debussy_control = {
     .texture = 96u,
     .register_band = DEBUSSY_REGISTER_MIDDLE,
     .colour_level = 48u,
+    .sensitivity = 64u,
+    .touch_threshold = 80u,
+    .light_influence = 127u,
+    .pedal_level = 34u,
+    .melody_level = 100u,
 };
 
 static DebussyState debussy_state;
@@ -116,8 +121,10 @@ static DebussyInput debussy_sensor_input(void) {
     const uint32_t noise = average_delta_freq > 0u ? average_delta_freq : 1u;
     const uint64_t scaled = (uint64_t)delta * 127u;
     const uint64_t denominator = (uint64_t)noise * 8u;
-    const uint8_t energy = scaled >= denominator * 127u ? 127u :
-                           (uint8_t)(scaled / denominator);
+    const uint8_t raw_energy = scaled >= denominator * 127u ? 127u :
+                               (uint8_t)(scaled / denominator);
+    const uint8_t energy = debussy_control_scale_energy(&debussy_control,
+                                                        raw_energy);
     int8_t direction = DEBUSSY_DIRECTION_STABLE;
     if (delta > noise) direction = last_freq > average_freq ?
             DEBUSSY_DIRECTION_RISING : DEBUSSY_DIRECTION_FALLING;
@@ -126,15 +133,19 @@ static DebussyInput debussy_sensor_input(void) {
     const uint16_t light_delta = light > debussy_last_light ?
             light - debussy_last_light : debussy_last_light - light;
     debussy_last_light = light;
+    const uint8_t raw_light = (uint8_t)(((uint32_t)light * 127u) /
+                                        MAX_OF_LIGHT);
+    const uint8_t raw_light_change = (uint8_t)MIN(127u,
+            ((uint32_t)light_delta * 127u) / MAX_OF_LIGHT);
+    const uint8_t light_change = (uint8_t)(((uint16_t)raw_light_change *
+            debussy_control.light_influence + 63u) / 127u);
     return (DebussyInput){
         .plant_energy = energy,
         .plant_direction = direction,
-        .gesture = energy >= 80u ? DEBUSSY_GESTURE_TOUCH :
-                   (energy >= 16u ? DEBUSSY_GESTURE_DRIFT :
-                                    DEBUSSY_GESTURE_STABLE),
-        .light_level = (uint8_t)(((uint32_t)light * 127u) / MAX_OF_LIGHT),
-        .light_change = (uint8_t)MIN(127u,
-                ((uint32_t)light_delta * 127u) / MAX_OF_LIGHT),
+        .gesture = debussy_control_gesture(&debussy_control, energy),
+        .light_level = debussy_control_scale_light(&debussy_control,
+                                                   raw_light),
+        .light_change = light_change,
     };
 }
 
@@ -168,7 +179,8 @@ static void play_debussy(void) {
     const DebussyDecision decision = debussy_step(&debussy_state, &input);
     if (decision.phrase_boundary || !debussy_pedal_active) {
         debussy_replace_voice(&debussy_pedal_active, &debussy_pedal_note,
-                debussy_register_note(decision.pedal_note), 34u);
+                debussy_register_note(decision.pedal_note),
+                debussy_control.pedal_level);
         debussy_replace_voice(&debussy_colour_active, &debussy_colour_note,
                 debussy_register_note(decision.colour_note),
                 debussy_control.colour_level);
@@ -180,12 +192,17 @@ static void play_debussy(void) {
     if (decision.melody_on && texture_sample < debussy_control.texture) {
         debussy_note_off_if_active(&debussy_melody_active,
                                    debussy_melody_note);
-        if (!isMutedByButton) {
+        const uint16_t scaled_velocity =
+                (uint16_t)decision.melody_velocity *
+                debussy_control.melody_level + 50u;
+        const uint8_t melody_velocity = (uint8_t)MIN(127u,
+                                                     scaled_velocity / 100u);
+        if (!isMutedByButton && melody_velocity > 0u) {
             const uint8_t note = debussy_register_note(decision.melody_note);
-            note_on(debussy_channel, note, decision.melody_velocity);
+            note_on(debussy_channel, note, melody_velocity);
 #if BIOTRON_LED_MUSIC_PULSE
             led_music_note_on(LED_SOURCE_PLANT, note,
-                              decision.melody_velocity);
+                              melody_velocity);
 #endif
             debussy_melody_note = note;
             debussy_melody_active = true;

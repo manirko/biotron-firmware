@@ -635,6 +635,11 @@ DEBUSSY_SETTER(set_debussy_seed_sys_ex, DEBUSSY_COMMAND_SEED)
 DEBUSSY_SETTER(set_debussy_texture_sys_ex, DEBUSSY_COMMAND_TEXTURE)
 DEBUSSY_SETTER(set_debussy_register_sys_ex, DEBUSSY_COMMAND_REGISTER)
 DEBUSSY_SETTER(set_debussy_colour_sys_ex, DEBUSSY_COMMAND_COLOUR)
+DEBUSSY_SETTER(set_debussy_sensitivity_sys_ex, DEBUSSY_COMMAND_SENSITIVITY)
+DEBUSSY_SETTER(set_debussy_touch_sys_ex, DEBUSSY_COMMAND_TOUCH_THRESHOLD)
+DEBUSSY_SETTER(set_debussy_light_sys_ex, DEBUSSY_COMMAND_LIGHT_INFLUENCE)
+DEBUSSY_SETTER(set_debussy_pedal_sys_ex, DEBUSSY_COMMAND_PEDAL)
+DEBUSSY_SETTER(set_debussy_melody_sys_ex, DEBUSSY_COMMAND_MELODY)
 
 static void get_debussy_control_sys_ex(const uint8_t data[], uint8_t len) {
     if (len != 1u) return;
@@ -719,6 +724,16 @@ void setup_commands() {
                          DEBUSSY_COMMAND_REGISTER, 1);
     add_sys_ex_query_len(set_debussy_colour_sys_ex,
                          DEBUSSY_COMMAND_COLOUR, 1);
+    add_sys_ex_query_len(set_debussy_sensitivity_sys_ex,
+                         DEBUSSY_COMMAND_SENSITIVITY, 1);
+    add_sys_ex_query_len(set_debussy_touch_sys_ex,
+                         DEBUSSY_COMMAND_TOUCH_THRESHOLD, 1);
+    add_sys_ex_query_len(set_debussy_light_sys_ex,
+                         DEBUSSY_COMMAND_LIGHT_INFLUENCE, 1);
+    add_sys_ex_query_len(set_debussy_pedal_sys_ex,
+                         DEBUSSY_COMMAND_PEDAL, 1);
+    add_sys_ex_query_len(set_debussy_melody_sys_ex,
+                         DEBUSSY_COMMAND_MELODY, 1);
     // Runtime-only action. The non-persisting registration is intentional:
     // recalibration must never schedule a settings flash write.
     add_sys_ex_query_len(get_settings_sys_ex,

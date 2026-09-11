@@ -8,13 +8,18 @@
 enum {
     DEBUSSY_QUERY_ID = 122,
     DEBUSSY_PROTOCOL_VERSION = 1,
-    DEBUSSY_SCHEMA_VERSION = 1,
-    DEBUSSY_CONTROL_PAYLOAD_BYTES = 9,
+    DEBUSSY_SCHEMA_VERSION = 2,
+    DEBUSSY_CONTROL_PAYLOAD_BYTES = 14,
     DEBUSSY_COMMAND_MODE = 28,
     DEBUSSY_COMMAND_SEED = 29,
     DEBUSSY_COMMAND_TEXTURE = 30,
     DEBUSSY_COMMAND_REGISTER = 31,
     DEBUSSY_COMMAND_COLOUR = 32,
+    DEBUSSY_COMMAND_SENSITIVITY = 33,
+    DEBUSSY_COMMAND_TOUCH_THRESHOLD = 34,
+    DEBUSSY_COMMAND_LIGHT_INFLUENCE = 35,
+    DEBUSSY_COMMAND_PEDAL = 36,
+    DEBUSSY_COMMAND_MELODY = 37,
 };
 
 typedef enum {
@@ -34,6 +39,11 @@ typedef struct {
     uint8_t texture;
     uint8_t register_band;
     uint8_t colour_level;
+    uint8_t sensitivity;
+    uint8_t touch_threshold;
+    uint8_t light_influence;
+    uint8_t pedal_level;
+    uint8_t melody_level;
 } DebussyControl;
 
 extern DebussyControl debussy_control;
@@ -41,6 +51,12 @@ extern DebussyControl debussy_control;
 void debussy_control_default(DebussyControl *control);
 bool debussy_control_set(DebussyControl *control, uint8_t command,
                          uint8_t value);
+uint8_t debussy_control_scale_energy(const DebussyControl *control,
+                                     uint8_t raw_energy);
+uint8_t debussy_control_scale_light(const DebussyControl *control,
+                                    uint8_t raw_light);
+uint8_t debussy_control_gesture(const DebussyControl *control,
+                                uint8_t energy);
 size_t debussy_control_encode(const DebussyControl *control,
                               uint8_t request_id, uint8_t *output,
                               size_t capacity);
