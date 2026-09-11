@@ -77,6 +77,28 @@ def main() -> None:
     assert len(re.findall(r"\.plant_channel\s*=\s*1\s*,", params)) == 4
     assert len(re.findall(r"\.light_channel\s*=\s*2\s*,", params)) == 4
 
+    # Factory sensitivity uses the same normalized units as live SysEx/CC.
+    # Legacy 50/10 literals saturated readback to 127 and made the first edit
+    # change the algorithm by two orders of magnitude.
+    assert len(re.findall(r"\.fibPower\s*=\s*0\.5\s*,", params)) == 4
+    assert len(re.findall(r"\.firstValue\s*=\s*0\.1\s*,", params)) == 4
+    assert not re.search(r"\.(?:fibPower|firstValue)\s*=\s*(?:50|10)\s*,", params)
+
+    persistence_service = simple_function_body(
+        params, "void service_settings_persistence(void)"
+    )
+    assert "status == Stabilization" in persistence_service
+    assert persistence_service.index("status == Stabilization") < (
+        persistence_service.index("persistence_is_due")
+    )
+    for signature in (
+        "void set_light_pitch_mode_sys_ex(const uint8_t data[], uint8_t len)",
+        "void set_light_pitch_mode_cc(uint8_t channel, uint8_t value)",
+    ):
+        pitch_mode = simple_function_body(params, signature)
+        assert "stop_light_midi();" in pitch_mode
+        assert "change_pitch(settings.plant_channel, 0, 64);" in pitch_mode
+
     assert "#define FLASH_TARGET_OFFSET (512 * 1024)" in params_h
     assert re.search(r"typedef struct\s*\{.*?int id;.*?\}\s*Settings_t;", params_h, re.S)
     assert "flash_range_erase(FLASH_TARGET_OFFSET" in params

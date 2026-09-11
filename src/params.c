@@ -473,12 +473,16 @@ void set_light_range_cc(const uint8_t channel, uint8_t value) {
 }
 
 void set_light_pitch_mode_sys_ex(const uint8_t data[], uint8_t len) {
-    settings.light_pitch_mode = data[0] > 0;
+    const bool enabled = data[0] > 0;
+    if (settings.light_pitch_mode != enabled) stop_light_midi();
+    settings.light_pitch_mode = enabled;
     change_pitch(settings.plant_channel, 0, 64);
 }
 
 void set_light_pitch_mode_cc(uint8_t channel, uint8_t value) {
-    settings.light_pitch_mode = value > 63;
+    const bool enabled = value > 63;
+    if (settings.light_pitch_mode != enabled) stop_light_midi();
+    settings.light_pitch_mode = enabled;
     change_pitch(settings.plant_channel, 0, 64);
 }
 
