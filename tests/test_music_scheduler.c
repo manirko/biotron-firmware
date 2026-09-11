@@ -32,7 +32,8 @@ static size_t stop_midi_count = 0;
 static bool fail_next_schedule = false;
 static bool plant_ready = false;
 static uint32_t plant_frequency = 0;
-static uint8_t calibration_messages[12][6];
+static uint8_t calibration_messages[16][18];
+static uint8_t calibration_message_lengths[16];
 static size_t calibration_message_count = 0;
 static uint8_t calibration_notes[20][4];
 static size_t calibration_note_count = 0;
@@ -89,13 +90,19 @@ void note_off(uint8_t channel, uint8_t note) {
 void plsdk_printf(const char *format, ...) { (void)format; }
 bool print_pure(uint8_t cable, const uint8_t data[], uint8_t len) {
     assert(cable <= 1);
-    assert(len == 6);
-    assert(calibration_message_count < 12);
+    assert(len == 6 || len == 18);
+    assert(calibration_message_count < 16);
+    calibration_message_lengths[calibration_message_count] = len;
     for (size_t i = 0; i < len; ++i) {
         calibration_messages[calibration_message_count][i] = data[i];
     }
     ++calibration_message_count;
     return true;
+}
+
+static uint32_t unpack_u28(const uint8_t *data) {
+    return (uint32_t)data[0] | ((uint32_t)data[1] << 7) |
+           ((uint32_t)data[2] << 14) | ((uint32_t)data[3] << 21);
 }
 uint32_t save_and_disable_interrupts(void) {
     ++critical_entries;
@@ -227,9 +234,17 @@ int main(void) {
 
     for (size_t i = 0; i <= AVERAGE_COUNTER; ++i) status_loop();
     assert(status == BPMClockActive);
-    assert(calibration_message_count == 6);
-    assert(calibration_messages[4][4] == BIOTRON_RECALIBRATE_READY);
-    assert(calibration_messages[5][4] == BIOTRON_RECALIBRATE_READY);
+    assert(calibration_message_count == 8);
+    for (size_t cable = 4; cable < 6; ++cable) {
+        assert(calibration_message_lengths[cable] == 18);
+        assert(calibration_messages[cable][4] == 4);
+        assert(unpack_u28(&calibration_messages[cable][5]) == plant_frequency);
+        assert(unpack_u28(&calibration_messages[cable][9]) == average_freq);
+        assert(unpack_u28(&calibration_messages[cable][13]) == 0);
+        assert(calibration_messages[cable][17] == SYS_EX_END);
+    }
+    assert(calibration_messages[6][4] == BIOTRON_RECALIBRATE_READY);
+    assert(calibration_messages[7][4] == BIOTRON_RECALIBRATE_READY);
 
     const uint8_t expected_notes[] = {64, 65, 67, 72, 71, 67, 62, 60};
     const uint8_t expected_velocities[] = {24, 24, 24, 24, 24, 24, 24, 24};

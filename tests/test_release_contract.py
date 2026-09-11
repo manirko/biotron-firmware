@@ -59,6 +59,7 @@ def main() -> None:
     assert "BIOTRON_RECALIBRATE_WAITING 1" in params_h
     assert "BIOTRON_RECALIBRATE_MEASURING 2" in params_h
     assert "BIOTRON_RECALIBRATE_READY 3" in params_h
+    assert "BIOTRON_RECALIBRATE_METRICS 4" in params_h
     assert "add_sys_ex_query_len(start_plant_calibration_sys_ex" in params
     assert "add_sys_ex_query_len(get_settings_sys_ex" in params
     assert "add_sys_ex_query_len(get_health_sys_ex, 124, 1);" in params

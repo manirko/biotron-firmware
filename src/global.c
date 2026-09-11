@@ -90,6 +90,24 @@ static void report_calibration_state(uint8_t state) {
     }
 }
 
+static void pack_midi_u28(uint8_t target[4], uint32_t value) {
+    if (value > 0x0fffffffu) value = 0x0fffffffu;
+    for (uint8_t i = 0; i < 4; ++i) target[i] = (value >> (i * 7u)) & 0x7fu;
+}
+
+static void report_calibration_metrics(uint32_t current_freq) {
+    if (!requested_calibration_active) return;
+    uint8_t response[18] = {SYS_EX_START, PLAYTRONICA_SYS_KEY,
+            BIOTRON_RECALIBRATE_COMMAND, requested_calibration_nonce,
+            BIOTRON_RECALIBRATE_METRICS};
+    pack_midi_u28(&response[5], current_freq);
+    pack_midi_u28(&response[9], average_freq);
+    pack_midi_u28(&response[13], average_delta_freq);
+    response[17] = SYS_EX_END;
+    print_pure(0, response, sizeof response);
+    print_pure(1, response, sizeof response);
+}
+
 uint32_t filter_freq(double val, double k) {
     static uint32_t filter_val = 0;
     if (filter_val == 0) {
@@ -236,6 +254,7 @@ void status_loop() {
     }
 
     uint32_t raw_freq = get_real_freq();
+    const uint32_t current_freq = raw_freq;
 
     switch (status) {
         case Sleep:
@@ -296,6 +315,7 @@ void status_loop() {
                     start_music_alarm();
                 }
                 status = active_status;
+                report_calibration_metrics(current_freq);
                 report_calibration_state(BIOTRON_RECALIBRATE_READY);
                 plsdk_printf("[+] Change status: Stab -> Active\n");
             }
