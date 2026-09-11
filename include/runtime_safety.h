@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <limits.h>
+#include <math.h>
 
 static inline int biotron_clamp_int(int value, int minimum, int maximum) {
     if (value < minimum) return minimum;
@@ -21,6 +22,13 @@ static inline uint8_t biotron_midi_7bit(int value) {
 
 static inline uint8_t biotron_midi_channel(int value) {
     return (uint8_t)biotron_clamp_int(value, 0, 15);
+}
+
+static inline double biotron_normalize_percent_setting(double value,
+                                                        double fallback) {
+    if (!isfinite(value) || value < 0.0) return fallback;
+    if (value > 1.0) value /= 100.0;
+    return value > 1.0 ? 1.0 : value;
 }
 
 static inline uint32_t biotron_random_note_jitter(uint32_t random_value,

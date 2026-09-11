@@ -40,8 +40,8 @@ const Settings_t fast_role_preset = {
         .BPM = BPM_TO_US(404),
         .lightBPM = 8,
         .fraction_note_off = 1,
-        .fibPower = 50,
-        .firstValue = 10,
+        .fibPower = 0.5,
+        .firstValue = 0.1,
         .filterPercent = 0,
         .scale = 3,
         .minPlantVelocity = 0,
@@ -70,8 +70,8 @@ const Settings_t the_performer_mode = {
         .BPM = BPM_TO_US(404),
         .lightBPM = 2,
         .fraction_note_off = 2,
-        .fibPower = 50,
-        .firstValue = 10,
+        .fibPower = 0.5,
+        .firstValue = 0.1,
         .filterPercent = 0,
         .scale = 6,
         .minPlantVelocity = 8,
@@ -100,8 +100,8 @@ const Settings_t in_discussion = {
         .BPM = BPM_TO_US(404),
         .lightBPM = 2,
         .fraction_note_off = 1,
-        .fibPower = 50,
-        .firstValue = 10,
+        .fibPower = 0.5,
+        .firstValue = 0.1,
         .filterPercent = 0,
         .scale = 5,
         .minPlantVelocity = 44,
@@ -130,8 +130,8 @@ const Settings_t mixolyd = {
         .BPM = BPM_TO_US(462),
         .lightBPM = 4,
         .fraction_note_off = 4,
-        .fibPower = 50,
-        .firstValue = 10,
+        .fibPower = 0.5,
+        .firstValue = 0.1,
         .filterPercent = 0,
         .scale = 4,
         .minPlantVelocity = 8,
@@ -207,6 +207,17 @@ void read_settings() {
         save_settings();
         return;
     }
+    const Settings_t stored_settings = settings;
+    settings.fibPower = biotron_normalize_percent_setting(
+            settings.fibPower, DEF_FIB_POW);
+    settings.firstValue = biotron_normalize_percent_setting(
+            settings.firstValue, DEF_FIB_FIRST);
+    settings.filterPercent = biotron_normalize_percent_setting(
+            settings.filterPercent, DEF_FILTER_PERCENT);
+    if (memcmp(&settings, &stored_settings, sizeof(settings)) != 0) {
+        save_settings();
+        return;
+    }
     persisted_settings_snapshot = settings;
     persisted_settings_snapshot_valid = true;
     persistence_note_saved(&settings_save_scheduler);
@@ -233,6 +244,9 @@ static void save_pending_settings_now(void) {
 }
 
 void service_settings_persistence(void) {
+    /* Flash stalls sampling IRQs; keep an already-running measurement intact
+     * and persist the pending value as soon as calibration leaves this state. */
+    if (status == Stabilization) return;
     if (!persistence_is_due(&settings_save_scheduler, time_us_64())) return;
     save_pending_settings_now();
 }
