@@ -27,6 +27,9 @@ python3 tests/test_release_contract.py
 run_pair debussy-mode \
   -I include src/debussy_mode.c tests/test_debussy_mode.c
 
+run_pair debussy-control \
+  -I include src/debussy_control.c tests/test_debussy_control.c
+
 "$compiler" -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
   -I include src/debussy_mode.c tests/generate_debussy_traces.c \
   -o "$test_dir/generate-debussy-traces"
@@ -102,7 +105,8 @@ run_pair music-v1 \
 run_pair note-lifecycle \
   -Wno-strict-prototypes -DBIOTRON_LED_MUSIC_PULSE=1 \
   -I tests/stubs -I include -I PLSDK/include \
-  src/music.c tests/test_note_lifecycle.c
+  src/debussy_mode.c src/debussy_control.c src/music.c \
+  tests/test_note_lifecycle.c
 
 run_pair music-scheduler \
   -Wno-strict-prototypes -I tests/stubs -I include -I PLSDK/include \

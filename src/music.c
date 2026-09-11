@@ -12,6 +12,8 @@
 #include "PLSDK.h"
 #include "runtime_safety.h"
 #include "midi_note_lifecycle.h"
+#include "debussy_mode.h"
+#include "debussy_control.h"
 
 uint8_t last_note_plant = MIDDLE_NOTE;
 uint8_t last_note_light = 0;
@@ -22,6 +24,26 @@ static bool light_note_active = false;
 static bool light_sensor_counter_valid = false;
 static int last_light_sensor_counter = 0;
 static volatile uintptr_t due_plant_note_identity = 0;
+
+DebussyControl debussy_control = {
+    .mode = DEBUSSY_MODE_CLASSIC,
+    .seed_variant = 0u,
+    .texture = 96u,
+    .register_band = DEBUSSY_REGISTER_MIDDLE,
+    .colour_level = 48u,
+};
+
+static DebussyState debussy_state;
+static bool debussy_initialized = false;
+static bool debussy_pedal_active = false;
+static bool debussy_colour_active = false;
+static bool debussy_melody_active = false;
+static uint8_t debussy_pedal_note = 0u;
+static uint8_t debussy_colour_note = 0u;
+static uint8_t debussy_melody_note = 0u;
+static uint8_t debussy_channel = 1u;
+static uint8_t debussy_melody_beats_left = 0u;
+static uint16_t debussy_last_light = MAX_OF_LIGHT / 2u;
 
 
 alarm_id_t note_off_alarm_id = -1;
@@ -58,6 +80,118 @@ void reset_plant_note_off() {
         note_off(midi_note_identity_channel(active_plant_note_identity),
                  midi_note_identity_note(active_plant_note_identity));
         active_plant_note_identity = 0;
+    }
+}
+
+static uint8_t debussy_register_note(uint8_t note) {
+    const int shift = ((int)debussy_control.register_band -
+                       (int)DEBUSSY_REGISTER_MIDDLE) * 12;
+    int shifted = (int)note + shift;
+    if (shifted < 0) shifted = 0;
+    if (shifted > 127) shifted = 127;
+    return (uint8_t)shifted;
+}
+
+static void debussy_note_off_if_active(bool *active, uint8_t note) {
+    if (!*active) return;
+    note_off(debussy_channel, note);
+    *active = false;
+}
+
+static void stop_debussy_midi(void) {
+    debussy_note_off_if_active(&debussy_melody_active, debussy_melody_note);
+    debussy_note_off_if_active(&debussy_colour_active, debussy_colour_note);
+    debussy_note_off_if_active(&debussy_pedal_active, debussy_pedal_note);
+    debussy_melody_beats_left = 0u;
+}
+
+void debussy_runtime_reset(void) {
+    stop_debussy_midi();
+    debussy_initialized = false;
+    debussy_last_light = MAX_OF_LIGHT / 2u;
+}
+
+static DebussyInput debussy_sensor_input(void) {
+    const uint32_t delta = biotron_abs_diff_u32(last_freq, average_freq);
+    const uint32_t noise = average_delta_freq > 0u ? average_delta_freq : 1u;
+    const uint64_t scaled = (uint64_t)delta * 127u;
+    const uint64_t denominator = (uint64_t)noise * 8u;
+    const uint8_t energy = scaled >= denominator * 127u ? 127u :
+                           (uint8_t)(scaled / denominator);
+    int8_t direction = DEBUSSY_DIRECTION_STABLE;
+    if (delta > noise) direction = last_freq > average_freq ?
+            DEBUSSY_DIRECTION_RISING : DEBUSSY_DIRECTION_FALLING;
+
+    const uint16_t light = MIN(adc_read(), MAX_OF_LIGHT);
+    const uint16_t light_delta = light > debussy_last_light ?
+            light - debussy_last_light : debussy_last_light - light;
+    debussy_last_light = light;
+    return (DebussyInput){
+        .plant_energy = energy,
+        .plant_direction = direction,
+        .gesture = energy >= 80u ? DEBUSSY_GESTURE_TOUCH :
+                   (energy >= 16u ? DEBUSSY_GESTURE_DRIFT :
+                                    DEBUSSY_GESTURE_STABLE),
+        .light_level = (uint8_t)(((uint32_t)light * 127u) / MAX_OF_LIGHT),
+        .light_change = (uint8_t)MIN(127u,
+                ((uint32_t)light_delta * 127u) / MAX_OF_LIGHT),
+    };
+}
+
+static void debussy_replace_voice(bool *active, uint8_t *active_note,
+                                  uint8_t note, uint8_t velocity) {
+    if (*active && *active_note == note) return;
+    debussy_note_off_if_active(active, *active_note);
+    if (isMutedByButton || velocity == 0u) return;
+    note_on(debussy_channel, note, velocity);
+    *active_note = note;
+    *active = true;
+}
+
+static void play_debussy(void) {
+    if (!debussy_initialized) {
+        const uint32_t seed = debussy_control.seed_variant == 0u ?
+                UINT32_C(0x4d595df4) : UINT32_C(0x9e3779b9);
+        debussy_init(&debussy_state, seed);
+        debussy_channel = biotron_midi_channel(settings.plant_channel);
+        debussy_initialized = true;
+    }
+
+    if (debussy_melody_active && debussy_melody_beats_left > 0u) {
+        --debussy_melody_beats_left;
+        if (debussy_melody_beats_left == 0u)
+            debussy_note_off_if_active(&debussy_melody_active,
+                                       debussy_melody_note);
+    }
+
+    const DebussyInput input = debussy_sensor_input();
+    const DebussyDecision decision = debussy_step(&debussy_state, &input);
+    if (decision.phrase_boundary || !debussy_pedal_active) {
+        debussy_replace_voice(&debussy_pedal_active, &debussy_pedal_note,
+                debussy_register_note(decision.pedal_note), 34u);
+        debussy_replace_voice(&debussy_colour_active, &debussy_colour_note,
+                debussy_register_note(decision.colour_note),
+                debussy_control.colour_level);
+    }
+
+    const uint32_t texture_sample =
+            (debussy_state.beat_index * 29u +
+             (uint32_t)debussy_control.seed_variant * 53u) & 0x7fu;
+    if (decision.melody_on && texture_sample < debussy_control.texture) {
+        debussy_note_off_if_active(&debussy_melody_active,
+                                   debussy_melody_note);
+        if (!isMutedByButton) {
+            const uint8_t note = debussy_register_note(decision.melody_note);
+            note_on(debussy_channel, note, decision.melody_velocity);
+#if BIOTRON_LED_MUSIC_PULSE
+            led_music_note_on(LED_SOURCE_PLANT, note,
+                              decision.melody_velocity);
+#endif
+            debussy_melody_note = note;
+            debussy_melody_active = true;
+            debussy_melody_beats_left = decision.melody_duration_beats;
+            last_note_plant = note;
+        }
     }
 }
 
@@ -250,6 +384,7 @@ void midi_light_pitch() {
 }
 
 void stop_midi() {
+    stop_debussy_midi();
     stop_plant_midi();
     stop_light_midi();
 }
@@ -277,6 +412,11 @@ void play_music(int64_t to_the_next_beat) {
 #if BIOTRON_LED_MUSIC_PULSE
     led_music_beat();
 #endif
+
+    if (debussy_control.mode == DEBUSSY_MODE_ENABLED) {
+        play_debussy();
+        return;
+    }
 
     midi_plant(to_the_next_beat);
 

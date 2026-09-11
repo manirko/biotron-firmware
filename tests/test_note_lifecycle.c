@@ -11,6 +11,7 @@
 #include "leds.h"
 #include "params.h"
 #include "PLSDK/music.h"
+#include "debussy_control.h"
 
 typedef struct {
     uint8_t kind;
@@ -157,6 +158,8 @@ static void reset_fixture(void) {
     led_note_count = 0;
     led_beat_count = 0;
     light_adc = 1600;
+    debussy_control_default(&debussy_control);
+    debussy_runtime_reset();
 }
 
 static void test_identity_round_trip(void) {
@@ -291,6 +294,26 @@ static void test_plant_mute_keeps_visual_feedback(void) {
     assert(last_led_note == 64);
 }
 
+static void test_debussy_adapter_is_bounded_and_stops_cleanly(void) {
+    reset_fixture();
+    debussy_control.mode = DEBUSSY_MODE_ENABLED;
+    debussy_runtime_reset();
+    play_music(4000);
+
+    size_t note_ons = 0;
+    for (size_t i = 0; i < midi_log_len; ++i)
+        if (midi_log[i].kind == LOG_NOTE_ON) ++note_ons;
+    assert(note_ons >= 2u);
+    assert(note_ons <= 3u);
+    assert(count_event(LOG_NOTE_ON, settings.light_channel, 36) == 0u);
+
+    stop_midi();
+    size_t note_offs = 0;
+    for (size_t i = 0; i < midi_log_len; ++i)
+        if (midi_log[i].kind == LOG_NOTE_OFF) ++note_offs;
+    assert(note_offs >= note_ons);
+}
+
 int main(void) {
     test_identity_round_trip();
     test_alarm_keeps_exact_note_identity();
@@ -301,6 +324,7 @@ int main(void) {
     test_light_requires_sensor_motion();
     test_plant_mute_keeps_visual_feedback();
     test_light_pitch_targets_the_plant_channel();
+    test_debussy_adapter_is_bounded_and_stops_cleanly();
     puts("note_lifecycle: identity, replacement, Clock, LED and failure passed");
     return 0;
 }
