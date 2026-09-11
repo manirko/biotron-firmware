@@ -573,8 +573,26 @@ void get_settings_sys_ex(const uint8_t data[], uint8_t len) {
 }
 
 void start_plant_calibration_sys_ex(const uint8_t data[], uint8_t len) {
-    if (len != 1) return;
-    start_plant_calibration(data[0]);
+    if (len == 1) {
+        start_plant_calibration(data[0]);
+        return;
+    }
+    if (len < 2) return;
+    const uint8_t nonce = data[0];
+    if (data[1] == BIOTRON_CALIBRATION_TELEMETRY && len == 2) {
+        report_calibration_telemetry(nonce);
+    } else if (data[1] == BIOTRON_CALIBRATION_SET_REFERENCE && len == 10) {
+        uint32_t baseline = 0, noise = 0;
+        for (uint8_t i = 0; i < 4; ++i) {
+            baseline |= (uint32_t)data[2 + i] << (i * 7u);
+            noise |= (uint32_t)data[6 + i] << (i * 7u);
+        }
+        set_manual_calibration_reference(baseline, noise);
+        report_calibration_telemetry(nonce);
+    } else if (data[1] == BIOTRON_CALIBRATION_RESET_REFERENCE && len == 2) {
+        reset_calibration_reference();
+        report_calibration_telemetry(nonce);
+    }
 }
 
 

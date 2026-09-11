@@ -17,6 +17,7 @@ bool TestMode = false;
 bool isTestModeGreen = false;
 bool LOGGER_FLAG = false;
 uint32_t button_states[3] = {0};
+uint8_t last_note_plant = 60;
 
 static alarm_callback_t scheduled_callback = NULL;
 static void *scheduled_user_data = NULL;
@@ -32,7 +33,7 @@ static size_t stop_midi_count = 0;
 static bool fail_next_schedule = false;
 static bool plant_ready = false;
 static uint32_t plant_frequency = 0;
-static uint8_t calibration_messages[16][18];
+static uint8_t calibration_messages[32][33];
 static uint8_t calibration_message_lengths[16];
 static size_t calibration_message_count = 0;
 static uint8_t calibration_notes[20][4];
@@ -90,8 +91,8 @@ void note_off(uint8_t channel, uint8_t note) {
 void plsdk_printf(const char *format, ...) { (void)format; }
 bool print_pure(uint8_t cable, const uint8_t data[], uint8_t len) {
     assert(cable <= 1);
-    assert(len == 6 || len == 18);
-    assert(calibration_message_count < 16);
+    assert(len == 6 || len == 18 || len == 33);
+    assert(calibration_message_count < 32);
     calibration_message_lengths[calibration_message_count] = len;
     for (size_t i = 0; i < len; ++i) {
         calibration_messages[calibration_message_count][i] = data[i];
@@ -245,6 +246,42 @@ int main(void) {
     }
     assert(calibration_messages[6][4] == BIOTRON_RECALIBRATE_READY);
     assert(calibration_messages[7][4] == BIOTRON_RECALIBRATE_READY);
+
+    /* Live telemetry distinguishes the measured calibration from the active
+     * runtime-only manual reference. It never mutates Settings_t or flash. */
+    assert(calibration_measured_baseline() == average_freq);
+    assert(calibration_measured_noise() == average_delta_freq);
+    const uint32_t measured_baseline = average_freq;
+    const uint32_t measured_noise = average_delta_freq;
+    assert(!calibration_manual_active());
+    assert(!set_manual_calibration_reference(MIN_FREQ, 17));
+    assert(set_manual_calibration_reference(2000, 17));
+    assert(average_freq == 2000);
+    assert(average_delta_freq == 17);
+    assert(calibration_manual_active());
+    last_freq = 2100;
+    calibration_message_count = 0;
+    report_calibration_telemetry(55);
+    assert(calibration_message_count == 2);
+    for (size_t cable = 0; cable < 2; ++cable) {
+        assert(calibration_message_lengths[cable] == 33);
+        assert(calibration_messages[cable][3] == 55);
+        assert(calibration_messages[cable][4] == BIOTRON_CALIBRATION_TELEMETRY);
+        assert(unpack_u28(&calibration_messages[cable][5]) == 2100);
+        assert(unpack_u28(&calibration_messages[cable][9]) == 2000);
+        assert(unpack_u28(&calibration_messages[cable][13]) == 17);
+        assert(unpack_u28(&calibration_messages[cable][17]) == measured_baseline);
+        assert(unpack_u28(&calibration_messages[cable][21]) == measured_noise);
+        assert(unpack_u28(&calibration_messages[cable][25]) == 100);
+        assert(calibration_messages[cable][29] == last_note_plant);
+        assert(calibration_messages[cable][30] == 1);
+        assert(calibration_messages[cable][31] == status);
+        assert(calibration_messages[cable][32] == SYS_EX_END);
+    }
+    assert(reset_calibration_reference());
+    assert(average_freq == measured_baseline);
+    assert(average_delta_freq == measured_noise);
+    assert(!calibration_manual_active());
 
     const uint8_t expected_notes[] = {64, 65, 67, 72, 71, 67, 62, 60};
     const uint8_t expected_velocities[] = {24, 24, 24, 24, 24, 24, 24, 24};

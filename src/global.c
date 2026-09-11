@@ -13,6 +13,7 @@
 #include "music.h"
 #include "raw_plant.h"
 #include "leds.h"
+#include "runtime_safety.h"
 
 #include "global.h"
 
@@ -24,6 +25,9 @@ uint32_t average_delta_freq = 0;
 static uint8_t status_counter = 0;
 static bool requested_calibration_active = false;
 static uint8_t requested_calibration_nonce = 0;
+static uint32_t measured_calibration_baseline = 0;
+static uint32_t measured_calibration_noise = 0;
+static bool manual_calibration_active = false;
 
 typedef struct {
     uint8_t tick;
@@ -107,6 +111,48 @@ static void report_calibration_metrics(uint32_t current_freq) {
     print_pure(0, response, sizeof response);
     print_pure(1, response, sizeof response);
 }
+
+void report_calibration_telemetry(uint8_t request_nonce) {
+    uint8_t response[33] = {SYS_EX_START, PLAYTRONICA_SYS_KEY,
+            BIOTRON_RECALIBRATE_COMMAND, request_nonce & 0x7f,
+            BIOTRON_CALIBRATION_TELEMETRY};
+    pack_midi_u28(&response[5], last_freq);
+    pack_midi_u28(&response[9], average_freq);
+    pack_midi_u28(&response[13], average_delta_freq);
+    pack_midi_u28(&response[17], measured_calibration_baseline);
+    pack_midi_u28(&response[21], measured_calibration_noise);
+    pack_midi_u28(&response[25],
+                  biotron_abs_diff_u32(last_freq, average_freq));
+    response[29] = biotron_midi_7bit(last_note_plant);
+    response[30] = manual_calibration_active ? 1 : 0;
+    response[31] = biotron_midi_7bit(status);
+    response[32] = SYS_EX_END;
+    print_pure(0, response, sizeof response);
+    print_pure(1, response, sizeof response);
+}
+
+bool set_manual_calibration_reference(uint32_t baseline, uint32_t noise) {
+    if ((status != Active && status != BPMClockActive) ||
+        baseline <= MIN_FREQ || baseline > 0x0fffffffu ||
+        noise > 0x0fffffffu) return false;
+    average_freq = baseline;
+    average_delta_freq = noise;
+    manual_calibration_active = true;
+    return true;
+}
+
+bool reset_calibration_reference(void) {
+    if ((status != Active && status != BPMClockActive) ||
+        measured_calibration_baseline <= MIN_FREQ) return false;
+    average_freq = measured_calibration_baseline;
+    average_delta_freq = measured_calibration_noise;
+    manual_calibration_active = false;
+    return true;
+}
+
+bool calibration_manual_active(void) { return manual_calibration_active; }
+uint32_t calibration_measured_baseline(void) { return measured_calibration_baseline; }
+uint32_t calibration_measured_noise(void) { return measured_calibration_noise; }
 
 uint32_t filter_freq(double val, double k) {
     static uint32_t filter_val = 0;
@@ -239,6 +285,9 @@ void start_plant_calibration(uint8_t request_nonce) {
     last_freq = 0;
     average_freq = 0;
     average_delta_freq = 0;
+    measured_calibration_baseline = 0;
+    measured_calibration_noise = 0;
+    manual_calibration_active = false;
     filter_freq(0, 0);
     reset_calibration_cue();
     status = Sleep;
@@ -274,6 +323,7 @@ void status_loop() {
             }
 
             if (status_counter >= STABILIZATION_COUNTER) {
+                manual_calibration_active = false;
                 status = Stabilization;
                 status_counter = 0;
                 reset_calibration_cue();
@@ -309,6 +359,8 @@ void status_loop() {
             if (status_counter > AVERAGE_COUNTER) {
                 average_freq /= status_counter;
                 average_delta_freq /= status_counter;
+                measured_calibration_baseline = average_freq;
+                measured_calibration_noise = average_delta_freq;
                 status_counter = 0;
                 stop_calibration_cue();
                 if (active_status == Active) {
@@ -343,6 +395,7 @@ void status_loop() {
                 last_freq = 0;
                 average_freq = 0;
                 average_delta_freq = 0;
+                manual_calibration_active = false;
                 if (status == Active) {
                     stop_music_alarm();
                 }

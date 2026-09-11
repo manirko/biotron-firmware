@@ -18,6 +18,12 @@ extern enum Status status;
 extern enum Status active_status;
 void status_loop();
 void start_plant_calibration(uint8_t request_nonce);
+void report_calibration_telemetry(uint8_t request_nonce);
+bool set_manual_calibration_reference(uint32_t baseline, uint32_t noise);
+bool reset_calibration_reference(void);
+bool calibration_manual_active(void);
+uint32_t calibration_measured_baseline(void);
+uint32_t calibration_measured_noise(void);
 
 extern uint32_t last_freq;
 extern uint32_t average_freq;

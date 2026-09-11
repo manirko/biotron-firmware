@@ -128,6 +128,12 @@ def main() -> None:
         params, "void start_plant_calibration_sys_ex(const uint8_t data[], uint8_t len)"
     )
     assert "start_plant_calibration(data[0]);" in recalibration_action
+    for required in (
+        "BIOTRON_CALIBRATION_TELEMETRY", "report_calibration_telemetry",
+        "BIOTRON_CALIBRATION_SET_REFERENCE", "set_manual_calibration_reference",
+        "BIOTRON_CALIBRATION_RESET_REFERENCE", "reset_calibration_reference",
+    ):
+        assert required in recalibration_action
     for forbidden in ("save_settings", "schedule_settings_save", "clear_flash", "reset_usb_boot"):
         assert forbidden not in recalibration_action
     recalibration_runtime = simple_function_body(
