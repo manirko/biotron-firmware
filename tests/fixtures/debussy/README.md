@@ -1,0 +1,34 @@
+# Debussy listening fixtures
+
+Each CSV is the 180-beat golden event table for a three-minute trace at the
+MIDI exporter's fixed 60 BPM. The matching MIDI uses channel 1 for the plant
+melody and channel 2 for the pedal/colour pair. Both channels use the same
+General MIDI piano program so seed A/B comparisons do not change timbre.
+
+- `still_plant_3m`: low plant energy and slow, sub-threshold light drift.
+- `touch_arc_3m`: three isolated touches, roughly one phrase apart, followed by
+  a long release to calm.
+- `light_arc_3m`: stable plant while light moves dark → bright → dark.
+- Seed A: `0x4d595df4`; seed B: `0x9e3779b9`.
+
+The CSV, not the MIDI serialization, is the musical golden truth. Regenerate
+only after reviewing a deliberate rule change and updating its invariant test.
+
+## First listening gate
+
+Use `touch_arc_3m-seed-a.mid` as A and `touch_arc_3m-seed-b.mid` as B. Play
+both through the same piano or soft-string patch, without changing tempo,
+gain, reverb or channel balance. The sensor trace is byte-identical: touches
+occur at beats 42, 66 and 90, approximately one phrase apart, then the input
+settles for the rest of the sample.
+
+For each seed, answer only:
+
+1. Is the motif recognisable when it returns?
+2. Do the three touches create a clear calm → grow → crest → release arc?
+3. Is any repetition annoying, or any leap chaotic?
+4. Which should continue: A, B, both, or neither?
+
+Passing invariants and balanced MIDI do not decide whether the result is
+musically good. No scheduler, protocol, persistence, UI or hardware work starts
+until this listening gate passes.

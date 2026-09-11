@@ -24,6 +24,14 @@ run_pair() {
 
 python3 tests/test_release_contract.py
 
+run_pair debussy-mode \
+  -I include src/debussy_mode.c tests/test_debussy_mode.c
+
+"$compiler" -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+  -I include src/debussy_mode.c tests/generate_debussy_traces.c \
+  -o "$test_dir/generate-debussy-traces"
+python3 tests/test_debussy_artifacts.py "$test_dir/generate-debussy-traces"
+
 run_pair midi-parser \
   -I PLSDK/include \
   PLSDK/src/midi_parser.c tests/test_midi_parser.c

@@ -1,0 +1,415 @@
+#include "debussy_mode.h"
+
+#include <stddef.h>
+
+enum {
+    LIGHT_DARK = 0,
+    LIGHT_MIDDLE,
+    LIGHT_BRIGHT,
+    LIGHT_UNSET = 255,
+};
+
+typedef struct {
+    uint8_t length;
+    uint8_t semitones[7];
+} Collection;
+
+static const Collection collections[DEBUSSY_COLLECTION_COUNT] = {
+    {6, {0, 2, 4, 6, 8, 10, 0}},
+    {5, {0, 2, 4, 7, 9, 0, 0}},
+    {5, {0, 2, 5, 7, 9, 0, 0}},
+    {7, {0, 2, 4, 6, 7, 9, 11}},
+    {7, {0, 2, 3, 5, 7, 9, 10}},
+};
+
+static uint32_t random_next(DebussyState *state) {
+    uint32_t value = state->random_state;
+    value ^= value << 13;
+    value ^= value >> 17;
+    value ^= value << 5;
+    state->random_state = value;
+    return value;
+}
+
+static uint8_t clamp_u8(int value, uint8_t minimum, uint8_t maximum) {
+    if (value < minimum) return minimum;
+    if (value > maximum) return maximum;
+    return (uint8_t)value;
+}
+
+static int absolute_int(int value) { return value < 0 ? -value : value; }
+
+static bool note_in_collection(uint8_t collection, uint8_t root, int note) {
+    const uint8_t pitch_class = (uint8_t)((note + 120 - root) % 12);
+    const Collection *scale = &collections[collection];
+    for (uint8_t index = 0; index < scale->length; ++index) {
+        if (scale->semitones[index] == pitch_class) return true;
+    }
+    return false;
+}
+
+static int degree_note(uint8_t collection, uint8_t root, int degree,
+                       int octave_base) {
+    const Collection *scale = &collections[collection];
+    int octave = 0;
+    while (degree < 0) {
+        degree += scale->length;
+        --octave;
+    }
+    while (degree >= scale->length) {
+        degree -= scale->length;
+        ++octave;
+    }
+    return octave_base + root + scale->semitones[degree] + octave * 12;
+}
+
+static uint8_t nearest_note(uint8_t collection, uint8_t root, int target,
+                            uint8_t previous, int maximum_leap) {
+    int best_note = DEBUSSY_NOTE_MIN;
+    int best_cost = 10000;
+    for (int note = DEBUSSY_NOTE_MIN; note <= DEBUSSY_NOTE_MAX; ++note) {
+        if (!note_in_collection(collection, root, note)) continue;
+        if (previous != DEBUSSY_REST &&
+            absolute_int(note - previous) > maximum_leap) {
+            continue;
+        }
+        const int voice_leading = previous == DEBUSSY_REST
+                                      ? 0
+                                      : absolute_int(note - previous);
+        const int cost = absolute_int(note - target) * 3 + voice_leading;
+        if (cost < best_cost) {
+            best_cost = cost;
+            best_note = note;
+        }
+    }
+    return (uint8_t)best_note;
+}
+
+static uint8_t neighbouring_note(uint8_t collection, uint8_t root,
+                                 uint8_t previous, int direction,
+                                 int maximum_leap) {
+    for (int distance = 1; distance <= maximum_leap; ++distance) {
+        const int preferred = previous + direction * distance;
+        if (preferred >= DEBUSSY_NOTE_MIN && preferred <= DEBUSSY_NOTE_MAX &&
+            note_in_collection(collection, root, preferred)) {
+            return (uint8_t)preferred;
+        }
+        const int alternate = previous - direction * distance;
+        if (alternate >= DEBUSSY_NOTE_MIN && alternate <= DEBUSSY_NOTE_MAX &&
+            note_in_collection(collection, root, alternate)) {
+            return (uint8_t)alternate;
+        }
+    }
+    return previous;
+}
+
+static uint8_t observed_light_band(uint8_t level) {
+    if (level < 40u) return LIGHT_DARK;
+    if (level > 88u) return LIGHT_BRIGHT;
+    return LIGHT_MIDDLE;
+}
+
+static void observe_light(DebussyState *state, const DebussyInput *input) {
+    const uint8_t observed = observed_light_band(input->light_level);
+    if (state->light_band == LIGHT_UNSET) {
+        state->light_band = observed;
+        state->light_candidate_band = observed;
+        state->light_candidate_beats = 1u;
+        state->pending_light_band = LIGHT_UNSET;
+        return;
+    }
+
+    if (observed != state->light_candidate_band) {
+        state->light_candidate_band = observed;
+        state->light_candidate_beats = 1u;
+    } else if (state->light_candidate_beats < UINT8_MAX) {
+        ++state->light_candidate_beats;
+    }
+
+    const uint8_t required_beats = input->light_change >= 20u ? 3u : 8u;
+    if (observed != state->light_band &&
+        state->light_candidate_beats >= required_beats) {
+        state->pending_light_band = observed;
+    }
+}
+
+static uint8_t scene_for_light(uint8_t band) {
+    if (band == LIGHT_DARK) return DEBUSSY_SCENE_VEILS;
+    if (band == LIGHT_BRIGHT) return DEBUSSY_SCENE_PAGODAS;
+    return DEBUSSY_SCENE_CATHEDRAL;
+}
+
+static uint8_t collection_for_scene(uint8_t scene, uint8_t phrase_count) {
+    if (scene == DEBUSSY_SCENE_VEILS) {
+        return phrase_count % 4u == 3u
+                   ? DEBUSSY_COLLECTION_SUSPENDED_PENTATONIC
+                   : DEBUSSY_COLLECTION_WHOLE_TONE;
+    }
+    if (scene == DEBUSSY_SCENE_PAGODAS) {
+        return phrase_count % 4u == 3u ? DEBUSSY_COLLECTION_LYDIAN
+                                       : DEBUSSY_COLLECTION_MAJOR_PENTATONIC;
+    }
+    return phrase_count % 3u == 2u ? DEBUSSY_COLLECTION_DORIAN
+                                    : DEBUSSY_COLLECTION_SUSPENDED_PENTATONIC;
+}
+
+static void generate_motif(DebussyState *state) {
+    const uint8_t scale_length = collections[state->collection].length;
+    state->motif_length = (uint8_t)(3u + random_next(state) % 3u);
+    int degree = (int)(random_next(state) % scale_length);
+    state->motif[0] = (uint8_t)degree;
+    for (uint8_t index = 1; index < state->motif_length; ++index) {
+        const uint32_t roll = random_next(state) % 100u;
+        int distance = roll < 8u ? 0 : (roll < 62u ? 1 : (roll < 86u ? 2 : 3));
+        if ((random_next(state) & 1u) == 0u) distance = -distance;
+        degree += distance;
+        if (degree < 0) degree = -degree;
+        if (degree >= scale_length)
+            degree = (int)scale_length - 1 - (degree - (int)scale_length + 1);
+        if (degree < 0) degree = 0;
+        state->motif[index] = (uint8_t)degree;
+    }
+    state->motif_index = 0u;
+    state->current_degree = (int8_t)state->motif[0];
+}
+
+static void select_harmony(DebussyState *state) {
+    const int target = state->light_band == LIGHT_DARK
+                           ? 43
+                           : (state->light_band == LIGHT_BRIGHT ? 55 : 48);
+    state->pedal_note = nearest_note(state->collection, state->root, target,
+                                     DEBUSSY_REST, 127);
+    static const uint8_t intervals[] = {7, 5, 9, 14, 2};
+    state->colour_note = state->pedal_note;
+    for (size_t index = 0; index < sizeof(intervals); ++index) {
+        const int note = state->pedal_note + intervals[index];
+        if (note <= DEBUSSY_NOTE_MAX &&
+            note_in_collection(state->collection, state->root, note)) {
+            state->colour_note = (uint8_t)note;
+            break;
+        }
+    }
+    if (state->colour_note == state->pedal_note) {
+        state->colour_note = nearest_note(state->collection, state->root,
+                                          state->pedal_note + 7,
+                                          DEBUSSY_REST, 127);
+    }
+}
+
+static uint8_t next_phase(uint8_t phase) {
+    if (phase == DEBUSSY_PHASE_RELEASE) return DEBUSSY_PHASE_CALM;
+    return (uint8_t)(phase + 1u);
+}
+
+static void update_phase_at_boundary(DebussyState *state,
+                                     const DebussyInput *input) {
+    if (state->beat_index == 0u) return;
+    /* A boundary-aligned touch is handled exactly once by the touch latch. */
+    if (input->gesture == DEBUSSY_GESTURE_TOUCH) return;
+    if (state->stable_beats >= 20u && input->plant_energy < 20u) {
+        state->phase = DEBUSSY_PHASE_CALM;
+        return;
+    }
+    if (input->plant_energy >= 72u) {
+        state->phase = next_phase(state->phase);
+        return;
+    }
+    if (state->phase == DEBUSSY_PHASE_CREST) {
+        state->phase = DEBUSSY_PHASE_RELEASE;
+    } else if (state->phase == DEBUSSY_PHASE_RELEASE) {
+        state->phase = DEBUSSY_PHASE_CALM;
+    } else if (input->plant_energy >= 32u && state->phrase_count % 2u == 0u) {
+        state->phase = next_phase(state->phase);
+    }
+}
+
+static bool begin_phrase(DebussyState *state, const DebussyInput *input) {
+    static const uint8_t phrase_lengths[] = {8, 10, 12};
+    bool harmony_changed = false;
+    update_phase_at_boundary(state, input);
+
+    if (state->beat_index > 0u) ++state->phrase_count;
+    state->phrase_length = phrase_lengths[random_next(state) % 3u];
+
+    if (state->beat_index == 0u) {
+        state->scene = scene_for_light(state->light_band);
+        harmony_changed = true;
+    }
+
+    if (state->pending_light_band != LIGHT_UNSET) {
+        state->light_band = state->pending_light_band;
+        state->pending_light_band = LIGHT_UNSET;
+        state->scene = scene_for_light(state->light_band);
+        harmony_changed = true;
+    }
+
+    const uint8_t collection = state->stable_beats >= 20u && !harmony_changed
+                                   ? state->collection
+                                   : collection_for_scene(state->scene,
+                                                          state->phrase_count);
+    if (collection != state->collection) {
+        state->collection = collection;
+        state->root = (uint8_t)((state->root +
+                                 (random_next(state) % 2u == 0u ? 2u : 5u)) %
+                                12u);
+        harmony_changed = true;
+    }
+
+    if (state->beat_index == 0u) {
+        generate_motif(state);
+        harmony_changed = true;
+    } else if (!harmony_changed && state->phrase_count % 3u == 0u) {
+        generate_motif(state);
+    }
+
+    if (harmony_changed) select_harmony(state);
+    return harmony_changed;
+}
+
+static int transformed_motif_degree(const DebussyState *state) {
+    uint8_t index = state->motif_index;
+    const uint8_t transform = state->phrase_count % 4u;
+    if (transform == 1u)
+        index = (uint8_t)((index + 1u) % state->motif_length);
+    else if (transform == 2u)
+        index = (uint8_t)(state->motif_length - 1u - index);
+
+    int degree = state->motif[index];
+    if (transform == 3u) ++degree;
+    return degree;
+}
+
+static uint8_t melody_note(DebussyState *state, const DebussyInput *input,
+                           bool accent) {
+    int target_degree = transformed_motif_degree(state);
+    if (input->gesture == DEBUSSY_GESTURE_DRIFT &&
+        state->motif_index % 3u == 2u) {
+        target_degree += input->plant_direction;
+    }
+
+    int movement = target_degree - state->current_degree;
+    if (movement > 2) movement = 2;
+    if (movement < -2) movement = -2;
+    state->current_degree = (int8_t)(state->current_degree + movement);
+
+    const int octave_base = state->light_band == LIGHT_DARK
+                                ? 48
+                                : (state->light_band == LIGHT_BRIGHT ? 60 : 55);
+    int target = degree_note(state->collection, state->root,
+                             state->current_degree, octave_base);
+    if (state->stable_beats >= 20u &&
+        state->stable_anchor_note != DEBUSSY_REST) {
+        const int lower = state->stable_anchor_note - 5;
+        const int upper = state->stable_anchor_note + 5;
+        if (target < lower) target = lower;
+        if (target > upper) target = upper;
+    }
+    const int maximum_leap =
+        accent || state->phase == DEBUSSY_PHASE_CREST ? 12 : 7;
+    uint8_t note = nearest_note(state->collection, state->root, target,
+                                state->last_melody_note, maximum_leap);
+
+    if (note == state->last_melody_note && state->repeated_notes >= 2u) {
+        note = neighbouring_note(state->collection, state->root, note,
+                                 target >= note ? 1 : -1, maximum_leap);
+    }
+
+    if (note == state->last_melody_note) {
+        if (state->repeated_notes < UINT8_MAX) ++state->repeated_notes;
+    } else {
+        state->repeated_notes = 0u;
+    }
+    state->last_melody_note = note;
+    state->motif_index = (uint8_t)((state->motif_index + 1u) %
+                                   state->motif_length);
+    return note;
+}
+
+void debussy_init(DebussyState *state, uint32_t seed) {
+    *state = (DebussyState){0};
+    state->random_state = seed == 0u ? UINT32_C(0x6d2b79f5) : seed;
+    state->scene = DEBUSSY_SCENE_CATHEDRAL;
+    state->phase = DEBUSSY_PHASE_CALM;
+    state->phrase_length = 8u;
+    state->collection = DEBUSSY_COLLECTION_SUSPENDED_PENTATONIC;
+    state->root = (uint8_t)((seed >> 4) % 12u);
+    state->light_band = LIGHT_UNSET;
+    state->light_candidate_band = LIGHT_UNSET;
+    state->pending_light_band = LIGHT_UNSET;
+    state->pedal_note = DEBUSSY_NOTE_MIN;
+    state->colour_note = DEBUSSY_NOTE_MIN;
+    state->last_melody_note = DEBUSSY_REST;
+    state->stable_anchor_note = DEBUSSY_REST;
+}
+
+DebussyDecision debussy_step(DebussyState *state, const DebussyInput *input) {
+    DebussyDecision decision = {0};
+    observe_light(state, input);
+
+    const bool phrase_boundary = state->beat_in_phrase == 0u;
+    bool colour_changed = false;
+    if (phrase_boundary) colour_changed = begin_phrase(state, input);
+
+    if (input->gesture == DEBUSSY_GESTURE_STABLE &&
+        input->plant_energy < 20u) {
+        if (state->stable_beats < UINT8_MAX) ++state->stable_beats;
+        if (state->stable_beats == 20u) {
+            state->stable_anchor_note =
+                state->last_melody_note == DEBUSSY_REST
+                    ? nearest_note(state->collection, state->root, 64,
+                                   DEBUSSY_REST, 127)
+                    : state->last_melody_note;
+        }
+    } else {
+        state->stable_beats = 0u;
+        state->stable_anchor_note = DEBUSSY_REST;
+    }
+
+    bool accent = false;
+    if (input->gesture == DEBUSSY_GESTURE_TOUCH) {
+        if (!state->touch_latched) {
+            state->touch_latched = 1u;
+            accent = true;
+            state->phase = next_phase(state->phase);
+        }
+    } else {
+        state->touch_latched = 0u;
+    }
+
+    static const uint8_t phase_density[DEBUSSY_PHASE_COUNT] = {34, 58, 78, 42};
+    uint8_t density = phase_density[state->phase];
+    if (state->phase == DEBUSSY_PHASE_CALM && state->stable_beats >= 20u)
+        density = 26u;
+    const bool melody_on = accent || random_next(state) % 100u < density;
+
+    decision.scene = state->scene;
+    decision.phase = state->phase;
+    decision.collection = state->collection;
+    decision.root = state->root;
+    decision.phrase_length = state->phrase_length;
+    decision.beat_in_phrase = state->beat_in_phrase;
+    decision.melody_note = DEBUSSY_REST;
+    decision.pedal_note = state->pedal_note;
+    decision.colour_note = state->colour_note;
+    decision.active_voice_count = (uint8_t)(2u + (melody_on ? 1u : 0u));
+    decision.phrase_boundary = phrase_boundary;
+    decision.melody_on = melody_on;
+    decision.accent = accent;
+    decision.colour_changed = colour_changed;
+
+    if (melody_on) {
+        decision.melody_note = melody_note(state, input, accent);
+        decision.melody_velocity = accent
+                                       ? 112u
+                                       : clamp_u8(42 + input->plant_energy / 2,
+                                                  42u, 104u);
+        decision.melody_duration_beats =
+            state->phase == DEBUSSY_PHASE_CALM ? 2u : 1u;
+    }
+
+    ++state->beat_index;
+    ++state->beat_in_phrase;
+    if (state->beat_in_phrase >= state->phrase_length)
+        state->beat_in_phrase = 0u;
+    return decision;
+}
