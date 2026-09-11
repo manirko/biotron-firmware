@@ -122,11 +122,13 @@ static void test_sysex_minimum_payload_is_enforced(void) {
     assert(bounded_calls == 1);
 }
 
-static void test_1000_cc_are_not_dropped(void) {
+static void test_1000_cc_on_both_cables_are_not_dropped(void) {
     add_CC(capture_cc, 7);
     for (size_t index = 0; index < 1000; ++index) {
+        const uint8_t cable = (uint8_t)((index >> 1u) & 1u);
         const uint8_t channel = (uint8_t)(index & 1u);
-        enqueue(0x0b, (uint8_t)(CC_START + channel), 7,
+        enqueue((uint8_t)((cable << 4u) | 0x0bu),
+                (uint8_t)(CC_START + channel), 7,
                 (uint8_t)(index & 0x7fu));
     }
     for (size_t index = 0; index < 1000; ++index) {
@@ -237,7 +239,7 @@ static void test_registries_fail_closed_at_capacity(void) {
 
 int main(void) {
     midi_diagnostics_reset();
-    test_1000_cc_are_not_dropped();
+    test_1000_cc_on_both_cables_are_not_dropped();
     test_two_cable_sysex_isolation_and_realtime();
     test_query_status_and_malformed_recovery();
     test_query_reply_uses_requesting_cable();
@@ -248,15 +250,16 @@ int main(void) {
     assert(read_sys_ex() == UNKNOWN);
     midi_diagnostics_snapshot_t diagnostics;
     midi_diagnostics_snapshot(&diagnostics);
-    assert(diagnostics.usb_packets_rx[0] > 1000);
-    assert(diagnostics.usb_packets_rx[1] > 0);
-    assert(diagnostics.parsed_channel[0] >= 1001);
+    assert(diagnostics.usb_packets_rx[0] >= 500);
+    assert(diagnostics.usb_packets_rx[1] >= 500);
+    assert(diagnostics.parsed_channel[0] >= 501);
+    assert(diagnostics.parsed_channel[1] >= 500);
     assert(diagnostics.parsed_sysex[0] > 0);
     assert(diagnostics.parsed_sysex[1] > 0);
     assert(diagnostics.parsed_realtime[0] > 0);
     assert(diagnostics.malformed[0] > 0);
     assert(diagnostics.sysex_aborted[0] > 0);
     assert(diagnostics.ignored_cable_packets == 1);
-    puts("commands_integration: burst, two-cable SysEx, query and Clock passed");
+    puts("commands_integration: burst CC/SysEx on both cables, query and Clock passed");
     return 0;
 }
