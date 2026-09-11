@@ -32,3 +32,10 @@ For each seed, answer only:
 Passing invariants and balanced MIDI do not decide whether the result is
 musically good. No scheduler, protocol, persistence, UI or hardware work starts
 until this listening gate passes.
+
+## Elegance revision
+
+The 2026-09-12 listening gate rejected beat-by-beat probability as too random.
+These fixtures now use repeatable phrase masks, restart the motif at each phrase,
+keep the root as a common tone across collection changes, and limit every melodic
+leap to seven semitones. Random state may change only at phrase boundaries.

@@ -186,10 +186,14 @@ static void play_debussy(void) {
                 debussy_control.colour_level);
     }
 
-    const uint32_t texture_sample =
-            (debussy_state.beat_index * 29u +
-             (uint32_t)debussy_control.seed_variant * 53u) & 0x7fu;
-    if (decision.melody_on && texture_sample < debussy_control.texture) {
+    const bool texture_allows = decision.accent ||
+            (debussy_control.texture >= 96u) ||
+            (debussy_control.texture >= 64u &&
+             decision.beat_in_phrase % 2u == 0u) ||
+            (debussy_control.texture >= 32u &&
+             decision.beat_in_phrase % 3u == 0u) ||
+            (debussy_control.texture > 0u && decision.phrase_boundary);
+    if (decision.melody_on && texture_allows) {
         debussy_note_off_if_active(&debussy_melody_active,
                                    debussy_melody_note);
         const uint16_t scaled_velocity =
