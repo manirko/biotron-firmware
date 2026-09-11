@@ -48,6 +48,7 @@ static size_t led_beat_count = 0;
 static led_source_t last_led_source = LED_SOURCE_LIGHT;
 static uint8_t last_led_note = 0;
 static uint8_t last_led_velocity = 0;
+static uint16_t light_adc = 1600;
 
 static void log_midi(uint8_t kind, uint8_t channel, uint8_t note) {
     assert(midi_log_len < sizeof midi_log / sizeof midi_log[0]);
@@ -67,7 +68,7 @@ static size_t count_event(uint8_t kind, uint8_t channel, uint8_t note) {
 
 uint64_t time_us_64(void) { return 1000; }
 uint32_t time_us_32(void) { return 1000; }
-uint16_t adc_read(void) { return 1600; }
+uint16_t adc_read(void) { return light_adc; }
 void light_note_observer(void) {}
 void led_music_note_on(led_source_t source, uint8_t note, uint8_t velocity) {
     ++led_note_count;
@@ -103,9 +104,8 @@ bool cancel_alarm(alarm_id_t alarm_id) {
 
 int calculate_note_by_scale(uint8_t start_note, int counter,
                             ScaleNums_t scale) {
-    (void)start_note;
-    (void)counter;
     (void)scale;
+    if (start_note != settings.middle_plant_note) return start_note + counter;
     return calculated_note;
 }
 
@@ -156,6 +156,7 @@ static void reset_fixture(void) {
     midi_log_len = 0;
     led_note_count = 0;
     led_beat_count = 0;
+    light_adc = 1600;
 }
 
 static void test_identity_round_trip(void) {
@@ -237,7 +238,7 @@ static void test_led_events_follow_emitted_notes_and_beats(void) {
     midi_light();
     assert(led_note_count == 1);
     assert(last_led_source == LED_SOURCE_LIGHT);
-    assert(last_led_note == 48);
+    assert(last_led_note == 36);
     assert(last_led_velocity == 100);
 
     reset_fixture();
@@ -251,6 +252,45 @@ static void test_led_events_follow_emitted_notes_and_beats(void) {
     assert(led_beat_count == 1);
 }
 
+static void test_light_requires_sensor_motion(void) {
+    reset_fixture();
+    settings.same_note_light = 0;
+    midi_light();
+    assert(count_event(LOG_NOTE_ON, 6, 36) == 1);
+
+    /* A timer tick, key change or scale change is not a light-sensor event. */
+    midi_light();
+    settings.middle_plant_note = 72;
+    settings.scale = SCALE_MINOR;
+    settings.swing_first_note_percent = 60;
+    midi_light();
+    assert(count_event(LOG_NOTE_ON, 6, 36) == 1);
+    assert(count_event(LOG_NOTE_ON, 6, 48) == 0);
+
+    light_adc = 1800;
+    midi_light();
+    assert(count_event(LOG_NOTE_ON, 6, 47) == 1);
+}
+
+static void test_light_pitch_targets_the_plant_channel(void) {
+    reset_fixture();
+    midi_light_pitch();
+    assert(count_event(LOG_PITCH, 5, 63) == 1);
+    assert(count_event(LOG_PITCH, 6, 63) == 0);
+}
+
+static void test_plant_mute_keeps_visual_feedback(void) {
+    reset_fixture();
+    calculated_note = 64;
+    last_note_plant = 64;
+    settings.isMutePlantVelocity = true;
+    midi_plant(4000);
+    assert(count_event(LOG_NOTE_ON, 5, 64) == 0);
+    assert(led_note_count == 1);
+    assert(last_led_source == LED_SOURCE_PLANT);
+    assert(last_led_note == 64);
+}
+
 int main(void) {
     test_identity_round_trip();
     test_alarm_keeps_exact_note_identity();
@@ -258,6 +298,9 @@ int main(void) {
     test_alarm_failure_fails_closed();
     test_cancelled_alarm_is_ignored();
     test_led_events_follow_emitted_notes_and_beats();
+    test_light_requires_sensor_motion();
+    test_plant_mute_keeps_visual_feedback();
+    test_light_pitch_targets_the_plant_channel();
     puts("note_lifecycle: identity, replacement, Clock, LED and failure passed");
     return 0;
 }

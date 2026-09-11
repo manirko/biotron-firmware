@@ -19,6 +19,8 @@ static uint8_t last_note_plant_channel = 1;
 static uint8_t last_note_light_channel = 2;
 static uintptr_t active_plant_note_identity = 0;
 static bool light_note_active = false;
+static bool light_sensor_counter_valid = false;
+static int last_light_sensor_counter = 0;
 static volatile uintptr_t due_plant_note_identity = 0;
 
 
@@ -143,15 +145,18 @@ void midi_plant(int64_t to_the_next_beat_us) {
                                   calculate_note_by_scale(settings.middle_plant_note,
                                                           plant_counter, settings.scale)));
 
-    if (!isMutedByButton && !settings.isMutePlantVelocity) {
+    if (!isMutedByButton) {
         if (active_status == BPMClockActive) {
-            reset_plant_note_off();
+            if (!settings.isMutePlantVelocity) reset_plant_note_off();
         }
-        if (abs((int)currentNote - (int)last_note_plant) < settings.same_note_plant) {
+        if (!settings.isMutePlantVelocity &&
+            abs((int)currentNote - (int)last_note_plant) <
+                    settings.same_note_plant) {
             return;
         }
 
-        if (active_status == Active && active_plant_note_identity != 0) {
+        if (!settings.isMutePlantVelocity && active_status == Active &&
+            active_plant_note_identity != 0) {
             reset_plant_note_off();
         }
 
@@ -160,15 +165,19 @@ void midi_plant(int64_t to_the_next_beat_us) {
                         settings.minPlantVelocity, settings.maxPlantVelocity) :
                 biotron_midi_7bit(settings.maxPlantVelocity);
 
-        note_on(settings.plant_channel, currentNote, velocity);
+        if (!settings.isMutePlantVelocity) {
+            note_on(settings.plant_channel, currentNote, velocity);
+        }
 #if BIOTRON_LED_MUSIC_PULSE
         led_music_note_on(LED_SOURCE_PLANT, currentNote, velocity);
 #endif
-        last_note_plant_channel = biotron_midi_channel(settings.plant_channel);
-        active_plant_note_identity = midi_note_identity_pack(
-                last_note_plant_channel, currentNote);
+        if (!settings.isMutePlantVelocity) {
+            last_note_plant_channel = biotron_midi_channel(settings.plant_channel);
+            active_plant_note_identity = midi_note_identity_pack(
+                    last_note_plant_channel, currentNote);
+        }
 
-        if (active_status == Active) {
+        if (!settings.isMutePlantVelocity && active_status == Active) {
             note_off_alarm_id = add_alarm_in_us(
                     MAX(1, to_the_next_beat_us /
                             MAX(1, settings.fraction_note_off)),
@@ -209,23 +218,27 @@ void midi_light() {
         light_note_active = false;
     }
 
-    if (abs((int)current_note - (int)last_note_light) < settings.same_note_light) {
+    if (isMutedByButton || settings.isMuteLightVelocity) return;
+
+    const int sensor_change = light_sensor_counter_valid ?
+            abs(counter - last_light_sensor_counter) : INT_MAX;
+    if (sensor_change <= MAX(0, settings.same_note_light)) {
         return;
     }
+    last_light_sensor_counter = counter;
+    light_sensor_counter_valid = true;
 
-    if (!isMutedByButton && !settings.isMuteLightVelocity) {
-        uint8_t vel = settings.isRandomLightVelocity ?
-                biotron_random_velocity((uint32_t)rand(),
-                        settings.minLightVelocity, settings.maxLightVelocity) :
-                biotron_midi_7bit(settings.maxLightVelocity);
-        note_on(settings.light_channel, current_note, vel);
+    uint8_t vel = settings.isRandomLightVelocity ?
+            biotron_random_velocity((uint32_t)rand(),
+                    settings.minLightVelocity, settings.maxLightVelocity) :
+            biotron_midi_7bit(settings.maxLightVelocity);
+    note_on(settings.light_channel, current_note, vel);
 #if BIOTRON_LED_MUSIC_PULSE
-        led_music_note_on(LED_SOURCE_LIGHT, current_note, vel);
+    led_music_note_on(LED_SOURCE_LIGHT, current_note, vel);
 #endif
-        last_note_light_channel = biotron_midi_channel(settings.light_channel);
-        light_note_active = true;
+    last_note_light_channel = biotron_midi_channel(settings.light_channel);
+    light_note_active = true;
 
-    }
     last_note_light = current_note;
 }
 
@@ -252,6 +265,7 @@ void stop_light_midi(void) {
         note_off(last_note_light_channel, last_note_light);
         light_note_active = false;
     }
+    light_sensor_counter_valid = false;
     stop_all_notes(last_note_light_channel);
 }
 
