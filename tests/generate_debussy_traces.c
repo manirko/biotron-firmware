@@ -94,6 +94,11 @@ static const char *gesture_name(uint8_t value) {
     return names[value];
 }
 
+static const char *arc_stage_name(uint8_t value) {
+    static const char *names[] = {"listen", "promise", "reveal", "return"};
+    return names[value];
+}
+
 static void write_row(unsigned int beat, const DebussyInput *input,
                       const DebussyDecision *decision) {
     printf("%u,%u,%d,%s,%u,%u,%s,%s,%s,%u,%u,%u,", beat,
@@ -104,12 +109,16 @@ static void write_row(unsigned int beat, const DebussyInput *input,
            collection_name(decision->collection), decision->root,
            decision->phrase_length, decision->beat_in_phrase);
     if (decision->melody_on) printf("%u", decision->melody_note);
-    printf(",%u,%u,%u,%u,%u,%u,%u,%u\n", decision->melody_velocity,
+    printf(",%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%s,%u\n",
+           decision->melody_velocity,
            decision->melody_duration_beats, decision->pedal_note,
            decision->colour_note, decision->active_voice_count,
            decision->phrase_boundary ? 1u : 0u,
            decision->accent ? 1u : 0u,
-           decision->colour_changed ? 1u : 0u);
+           decision->colour_changed ? 1u : 0u,
+           decision->structural_response ? 1u : 0u,
+           decision->surprise ? 1u : 0u,
+           arc_stage_name(decision->arc_stage), decision->landmark_note);
 }
 
 int main(int argc, char **argv) {
@@ -126,12 +135,19 @@ int main(int argc, char **argv) {
     }
 
     DebussyInput (*fixture_input)(unsigned int) = NULL;
+    unsigned int source_start = 0u;
+    unsigned int output_beats = FIXTURE_BEATS;
     if (strcmp(fixture, "still_plant_3m") == 0)
         fixture_input = still_plant;
     else if (strcmp(fixture, "touch_arc_3m") == 0)
         fixture_input = touch_arc;
     else if (strcmp(fixture, "light_arc_3m") == 0)
         fixture_input = light_arc;
+    else if (strcmp(fixture, "viral_touch_15s") == 0) {
+        fixture_input = touch_arc;
+        source_start = 40u;
+        output_beats = 15u;
+    }
     else {
         fputs("unknown fixture\n", stderr);
         return 2;
@@ -139,9 +155,13 @@ int main(int argc, char **argv) {
 
     DebussyState state;
     debussy_init(&state, (uint32_t)parsed_seed);
-    puts("beat,plant_energy,plant_direction,gesture,light_level,light_change,scene,phase,collection,root,phrase_length,beat_in_phrase,melody_note,velocity,duration_beats,pedal_note,colour_note,active_voices,phrase_boundary,accent,colour_changed");
-    for (unsigned int beat = 0; beat < FIXTURE_BEATS; ++beat) {
+    for (unsigned int beat = 0; beat < source_start; ++beat) {
         const DebussyInput input = fixture_input(beat);
+        (void)debussy_step(&state, &input);
+    }
+    puts("beat,plant_energy,plant_direction,gesture,light_level,light_change,scene,phase,collection,root,phrase_length,beat_in_phrase,melody_note,velocity,duration_beats,pedal_note,colour_note,active_voices,phrase_boundary,accent,colour_changed,structural_response,surprise,arc_stage,landmark_note");
+    for (unsigned int beat = 0; beat < output_beats; ++beat) {
+        const DebussyInput input = fixture_input(source_start + beat);
         const DebussyDecision decision = debussy_step(&state, &input);
         write_row(beat, &input, &decision);
     }

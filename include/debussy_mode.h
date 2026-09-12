@@ -47,6 +47,14 @@ typedef enum {
     DEBUSSY_GESTURE_TOUCH,
 } DebussyGesture;
 
+typedef enum {
+    DEBUSSY_ARC_LISTEN = 0,
+    DEBUSSY_ARC_PROMISE,
+    DEBUSSY_ARC_REVEAL,
+    DEBUSSY_ARC_RETURN,
+    DEBUSSY_ARC_STAGE_COUNT,
+} DebussyArcStage;
+
 /* Normalized sensor features supplied once per musical beat. */
 typedef struct {
     uint8_t plant_energy;
@@ -74,6 +82,10 @@ typedef struct {
     bool melody_on;
     bool accent;
     bool colour_changed;
+    bool structural_response;
+    bool surprise;
+    uint8_t arc_stage;
+    uint8_t landmark_note;
 } DebussyDecision;
 
 /* All engine memory is caller-owned and fixed-size. */
@@ -101,6 +113,11 @@ typedef struct {
     uint8_t last_melody_note;
     uint8_t stable_anchor_note;
     uint8_t repeated_notes;
+    uint8_t touch_arc_active;
+    uint8_t touch_arc_beat;
+    uint8_t touch_origin_note;
+    uint8_t landmark_note;
+    uint8_t surprise_cooldown;
     int8_t current_degree;
 } DebussyState;
 

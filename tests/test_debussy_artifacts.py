@@ -10,15 +10,21 @@ import struct
 import subprocess
 import sys
 import tempfile
+import wave
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "debussy"
 EXPORTER = ROOT / "tests" / "debussy_csv_to_midi.py"
-FIXTURES = ("still_plant_3m", "touch_arc_3m", "light_arc_3m")
+RENDERER = ROOT / "tests" / "debussy_csv_to_wav.py"
+FIXTURES = {
+    "still_plant_3m": 180,
+    "touch_arc_3m": 180,
+    "light_arc_3m": 180,
+    "viral_touch_15s": 15,
+}
 SEEDS = {"seed-a": "0x4d595df4", "seed-b": "0x9e3779b9"}
 TICKS_PER_BEAT = 480
-TRACE_BEATS = 180
 
 
 def read_variable_length(data: bytes, position: int) -> tuple[int, int]:
@@ -31,7 +37,7 @@ def read_variable_length(data: bytes, position: int) -> tuple[int, int]:
             return value, position
 
 
-def assert_balanced_three_voice_midi(data: bytes) -> None:
+def assert_balanced_three_voice_midi(data: bytes, trace_beats: int) -> None:
     assert data[:4] == b"MThd"
     header_length, format_number, tracks, division = struct.unpack(
         ">IHHH", data[4:14]
@@ -74,7 +80,7 @@ def assert_balanced_three_voice_midi(data: bytes) -> None:
 
     assert not active
     assert maximum_voices <= 3
-    assert tick == TRACE_BEATS * TICKS_PER_BEAT
+    assert tick == trace_beats * TICKS_PER_BEAT
 
 
 def rows_from(data: bytes) -> list[dict[str, str]]:
@@ -82,8 +88,9 @@ def rows_from(data: bytes) -> list[dict[str, str]]:
 
 
 def assert_fixture_semantics(fixture: str, rows: list[dict[str, str]]) -> None:
-    assert len(rows) == TRACE_BEATS
-    assert [int(row["beat"]) for row in rows] == list(range(TRACE_BEATS))
+    trace_beats = FIXTURES[fixture]
+    assert len(rows) == trace_beats
+    assert [int(row["beat"]) for row in rows] == list(range(trace_beats))
     assert all(int(row["active_voices"]) <= 3 for row in rows)
     assert all(
         row["phrase_boundary"] == "1"
@@ -92,19 +99,54 @@ def assert_fixture_semantics(fixture: str, rows: list[dict[str, str]]) -> None:
     )
 
     accents = [int(row["beat"]) for row in rows if row["accent"] == "1"]
+    structural_responses = [
+        int(row["beat"]) for row in rows
+        if row["structural_response"] == "1"
+    ]
+    surprises = [
+        int(row["beat"]) for row in rows if row["surprise"] == "1"
+    ]
     changes = [row for row in rows if row["colour_changed"] == "1"]
     if fixture == "still_plant_3m":
         assert accents == []
+        assert structural_responses == []
+        assert surprises == []
         assert len(changes) == 1
         assert sum(bool(row["melody_note"]) for row in rows[64:]) <= 52
     elif fixture == "touch_arc_3m":
         assert accents == [42, 66, 90]
+        assert structural_responses == [42, 66, 90]
+        assert surprises == [46, 70, 94]
+        for touch in structural_responses:
+            reveal = rows[touch + 4]
+            returning = rows[touch + 8]
+            assert reveal["arc_stage"] == "reveal"
+            assert reveal["melody_note"] == reveal["landmark_note"]
+            assert returning["arc_stage"] == "return"
+            assert abs(
+                int(returning["melody_note"]) - int(rows[touch]["melody_note"])
+            ) <= 3
         assert {row["phase"] for row in rows} == {
             "calm", "grow", "crest", "release"
         }
         assert rows[-1]["phase"] == "calm"
+    elif fixture == "viral_touch_15s":
+        assert accents == [2]
+        assert structural_responses == [2]
+        assert surprises == [6]
+        assert rows[6]["arc_stage"] == "reveal"
+        assert rows[6]["melody_note"] == rows[6]["landmark_note"]
+        assert rows[10]["arc_stage"] == "return"
+        assert abs(
+            int(rows[10]["melody_note"]) - int(rows[2]["melody_note"])
+        ) <= 3
+        assert rows[14]["melody_note"] == rows[10]["melody_note"]
+        assert rows[14]["collection"] == rows[0]["collection"]
+        assert rows[14]["pedal_note"] == rows[0]["pedal_note"]
     else:
         assert accents == []
+        assert structural_responses == []
+        assert surprises == []
         assert [row["scene"] for row in changes] == [
             "veils", "cathedral", "pagodas", "cathedral", "veils"
         ]
@@ -117,7 +159,7 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="debussy-artifacts-") as temp_name:
         temp = pathlib.Path(temp_name)
-        for fixture in FIXTURES:
+        for fixture, trace_beats in FIXTURES.items():
             for seed_name, seed in SEEDS.items():
                 stem = f"{fixture}-{seed_name}"
                 generated = subprocess.check_output([generator, fixture, seed])
@@ -134,13 +176,27 @@ def main() -> None:
                 )
                 midi = midi_path.read_bytes()
                 assert midi == (FIXTURE_DIR / f"{stem}.mid").read_bytes()
-                assert_balanced_three_voice_midi(midi)
+                assert_balanced_three_voice_midi(midi, trace_beats)
+
+                if fixture == "viral_touch_15s":
+                    wav_path = temp / f"{stem}.wav"
+                    subprocess.run(
+                        [sys.executable, RENDERER, csv_path, wav_path], check=True
+                    )
+                    with wave.open(str(wav_path), "rb") as preview:
+                        assert preview.getnchannels() == 2
+                        assert preview.getsampwidth() == 2
+                        assert preview.getframerate() == 44_100
+                        assert preview.getnframes() == trace_beats * 44_100
 
     for fixture in FIXTURES:
         assert generated_by_name[f"{fixture}-seed-a"] != generated_by_name[
             f"{fixture}-seed-b"
         ]
-    print("debussy_artifacts: 3 traces x 2 seeds and balanced MIDI passed")
+    print(
+        f"debussy_artifacts: {len(FIXTURES)} traces x "
+        f"{len(SEEDS)} seeds and balanced MIDI passed"
+    )
 
 
 if __name__ == "__main__":
