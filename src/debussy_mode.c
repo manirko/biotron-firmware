@@ -85,6 +85,28 @@ static uint8_t nearest_note(uint8_t collection, uint8_t root, int target,
     return (uint8_t)best_note;
 }
 
+static uint8_t directed_nearest_note(uint8_t collection, uint8_t root,
+                                     int target, uint8_t previous,
+                                     int direction) {
+    for (int distance = 0; distance <= 12; ++distance) {
+        const int preferred = target + direction * distance;
+        if (preferred >= DEBUSSY_NOTE_MIN && preferred <= DEBUSSY_NOTE_MAX &&
+            note_in_collection(collection, root, preferred) &&
+            (previous == DEBUSSY_REST ||
+             absolute_int(preferred - previous) <= 7)) {
+            return (uint8_t)preferred;
+        }
+        const int alternate = target - direction * distance;
+        if (alternate >= DEBUSSY_NOTE_MIN && alternate <= DEBUSSY_NOTE_MAX &&
+            note_in_collection(collection, root, alternate) &&
+            (previous == DEBUSSY_REST ||
+             absolute_int(alternate - previous) <= 7)) {
+            return (uint8_t)alternate;
+        }
+    }
+    return previous;
+}
+
 static uint8_t neighbouring_note(uint8_t collection, uint8_t root,
                                  uint8_t previous, int direction,
                                  int maximum_leap) {
@@ -117,6 +139,7 @@ static void start_touch_arc(DebussyState *state, const DebussyInput *input) {
                                : state->last_melody_note;
     int direction = input->plant_direction;
     if (direction == DEBUSSY_DIRECTION_STABLE) direction = 1;
+    state->touch_arc_direction = (int8_t)direction;
     const int target = (int)origin + direction * 7;
     state->touch_origin_note = origin;
     state->landmark_note = nearest_note(state->collection, state->root,
@@ -127,17 +150,19 @@ static void start_touch_arc(DebussyState *state, const DebussyInput *input) {
 }
 
 static bool touch_arc_onset(const DebussyState *state) {
-    return state->touch_arc_active && state->touch_arc_beat <= 12u &&
-           state->touch_arc_beat % 2u == 0u;
+    return state->touch_arc_active && state->touch_arc_beat <= 12u;
 }
 
 static int touch_arc_target(const DebussyState *state) {
-    const int origin = state->touch_origin_note;
-    const int delta = (int)state->landmark_note - origin;
-    const uint8_t beat = state->touch_arc_beat;
-    if (beat <= 4u) return origin + delta * (int)(beat + 2u) / 6;
-    if (beat <= 6u) return origin + delta / 2;
-    return origin;
+    /* Two tiny authored identities: repetition makes the gesture memorable;
+       the sensor chooses their direction, never their individual notes. */
+    static const int8_t themes[2][13] = {
+        {0, 2, 5, 2, 7, 5, 2, 5, 0, 2, 5, 2, 0},
+        {0, -2, 3, 0, 7, 3, 0, -2, 0, 3, -2, 3, 0},
+    };
+    return (int)state->touch_origin_note +
+           state->touch_arc_direction *
+               themes[state->touch_theme][state->touch_arc_beat];
 }
 
 static void advance_touch_arc(DebussyState *state) {
@@ -333,16 +358,13 @@ static int transformed_motif_degree(const DebussyState *state) {
 static uint8_t melody_note(DebussyState *state, const DebussyInput *input) {
     if (state->touch_arc_active) {
         const int target = touch_arc_target(state);
-        uint8_t note = nearest_note(state->collection, state->root, target,
-                                    state->last_melody_note, 7);
+        const int direction = target >= state->touch_origin_note ? 1 : -1;
+        uint8_t note = directed_nearest_note(
+            state->collection, state->root, target,
+            state->last_melody_note, direction);
         if (state->touch_arc_beat == 4u) note = state->landmark_note;
-        if (state->touch_arc_beat == 8u) note = state->touch_origin_note;
-
-        if (note == state->last_melody_note && state->repeated_notes >= 2u) {
-            const int direction = target >= note ? 1 : -1;
-            note = neighbouring_note(state->collection, state->root, note,
-                                     direction, 7);
-        }
+        if (state->touch_arc_beat == 8u || state->touch_arc_beat == 12u)
+            note = state->touch_origin_note;
 
         if (note == state->last_melody_note) {
             if (state->repeated_notes < UINT8_MAX) ++state->repeated_notes;
@@ -430,6 +452,8 @@ void debussy_init(DebussyState *state, uint32_t seed) {
     state->stable_anchor_note = DEBUSSY_REST;
     state->touch_origin_note = DEBUSSY_REST;
     state->landmark_note = DEBUSSY_REST;
+    state->touch_theme = (uint8_t)(seed & 1u);
+    state->touch_arc_direction = DEBUSSY_DIRECTION_RISING;
 }
 
 DebussyDecision debussy_step(DebussyState *state, const DebussyInput *input) {

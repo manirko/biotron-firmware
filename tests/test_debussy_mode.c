@@ -108,7 +108,7 @@ static void test_fixed_seed_is_exact_and_repeatable(void) {
         trace_hash = hash_decision(trace_hash, &a);
     }
     assert(memcmp(&left, &right, sizeof(left)) == 0);
-    assert(trace_hash == UINT32_C(0xd8e3d209));
+    assert(trace_hash == UINT32_C(0x3c117770));
 }
 
 static void test_different_seed_changes_surface_not_rules(void) {
@@ -238,7 +238,9 @@ static void advance_to_touch_test(DebussyState *state, unsigned int beats) {
 static void test_touch_creates_one_complete_short_form_arc(void) {
     DebussyState state;
     debussy_init(&state, UINT32_C(0x4d595df4));
+    assert(state.touch_theme == 0u);
     advance_to_touch_test(&state, 24u);
+    assert(state.touch_theme == 0u);
 
     const uint8_t origin = state.last_melody_note;
     unsigned int onsets = 0u;
@@ -247,7 +249,7 @@ static void test_touch_creates_one_complete_short_form_arc(void) {
     uint8_t reveal_note = DEBUSSY_REST;
     uint8_t closing_note = DEBUSSY_REST;
 
-    for (unsigned int offset = 0; offset <= 10u; ++offset) {
+    for (unsigned int offset = 0; offset <= 12u; ++offset) {
         DebussyInput input = still_input(24u + offset);
         if (offset == 0u) {
             input.gesture = DEBUSSY_GESTURE_TOUCH;
@@ -279,8 +281,8 @@ static void test_touch_creates_one_complete_short_form_arc(void) {
         }
     }
 
-    assert(onsets >= 5u);
-    assert(onsets <= 8u);
+    /* A hook must expose a learnable phrase, not a few isolated landmarks. */
+    assert(onsets == 13u);
     assert(surprises == 1u);
     assert(surprise_offset >= 3u && surprise_offset <= 6u);
     assert(reveal_note >= state.touch_origin_note);
@@ -288,6 +290,30 @@ static void test_touch_creates_one_complete_short_form_arc(void) {
     assert(closing_note != DEBUSSY_REST);
     assert((int)closing_note - (int)origin <= 3);
     assert((int)closing_note - (int)origin >= -3);
+}
+
+static void test_touch_arc_states_an_authored_four_note_identity(void) {
+    DebussyState state;
+    debussy_init(&state, UINT32_C(0x4d595df4));
+    advance_to_touch_test(&state, 24u);
+
+    uint8_t notes[5] = {0};
+    for (unsigned int offset = 0; offset < 5u; ++offset) {
+        DebussyInput input = still_input(24u + offset);
+        input.gesture = offset == 0u ? DEBUSSY_GESTURE_TOUCH
+                                     : DEBUSSY_GESTURE_DRIFT;
+        input.plant_energy = 80u;
+        input.plant_direction = DEBUSSY_DIRECTION_RISING;
+        const DebussyDecision decision = debussy_step(&state, &input);
+        assert(decision.melody_on);
+        notes[offset] = decision.melody_note;
+    }
+
+    /* 0-a-b-a is heard before the fifth-note reveal. */
+    assert(notes[1] > notes[0]);
+    assert(notes[2] > notes[1]);
+    assert(notes[3] == notes[1]);
+    assert(notes[4] > notes[2]);
 }
 
 static void test_touch_direction_changes_the_promised_landmark(void) {
@@ -495,7 +521,10 @@ static void test_ten_thousand_extreme_sensor_beats(void) {
             }
         }
         if (decision.melody_on) {
-            if (decision.melody_note == previous_note) {
+            if (decision.structural_response) {
+                /* A re-articulated origin is the user's downbeat, not drift. */
+                repeats = 0u;
+            } else if (decision.melody_note == previous_note) {
                 ++repeats;
                 assert(repeats <= 2u);
             } else {
@@ -523,6 +552,7 @@ int main(void) {
     test_one_touch_advances_at_most_one_phase_and_accents_once();
     test_boundary_touch_does_not_skip_a_phase();
     test_touch_creates_one_complete_short_form_arc();
+    test_touch_arc_states_an_authored_four_note_identity();
     test_touch_direction_changes_the_promised_landmark();
     test_repeated_touches_cannot_spam_surprises();
     test_density_rises_from_calm_to_crest();
