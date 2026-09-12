@@ -50,6 +50,7 @@ static uint8_t debussy_melody_channel = 1u;
 static uint8_t debussy_light_channel = 2u;
 static uint8_t debussy_melody_beats_left = 0u;
 static uint16_t debussy_last_light = MAX_OF_LIGHT / 2u;
+static bool debussy_last_light_valid = false;
 
 
 alarm_id_t note_off_alarm_id = -1;
@@ -122,6 +123,7 @@ void debussy_runtime_reset(void) {
     stop_debussy_midi();
     debussy_initialized = false;
     debussy_last_light = MAX_OF_LIGHT / 2u;
+    debussy_last_light_valid = false;
 }
 
 static DebussyInput debussy_sensor_input(void) {
@@ -138,15 +140,20 @@ static DebussyInput debussy_sensor_input(void) {
             DEBUSSY_DIRECTION_RISING : DEBUSSY_DIRECTION_FALLING;
 
     const uint16_t light = MIN(adc_read(), MAX_OF_LIGHT);
-    const uint16_t light_delta = light > debussy_last_light ?
-            light - debussy_last_light : debussy_last_light - light;
+    const uint16_t light_delta = !debussy_last_light_valid ? 0u :
+            (light > debussy_last_light ? light - debussy_last_light :
+                                          debussy_last_light - light);
     debussy_last_light = light;
+    debussy_last_light_valid = true;
     const uint8_t raw_light = (uint8_t)(((uint32_t)light * 127u) /
                                         MAX_OF_LIGHT);
     const uint8_t raw_light_change = (uint8_t)MIN(127u,
             ((uint32_t)light_delta * 127u) / MAX_OF_LIGHT);
-    const uint8_t light_change = (uint8_t)(((uint16_t)raw_light_change *
-            debussy_control.light_influence + 63u) / 127u);
+    /* Influence shapes harmony depth; any enabled light control keeps the
+       physical hand gesture legible even in low-influence presets. */
+    const uint8_t light_change = debussy_control.light_influence == 0u
+                                     ? 0u
+                                     : raw_light_change;
     return (DebussyInput){
         .plant_energy = energy,
         .plant_direction = direction,
@@ -190,13 +197,18 @@ static void play_debussy(void) {
     const DebussyDecision decision = debussy_step(&debussy_state, &input);
     const bool light_muted = isMutedByButton ||
                              settings.isMuteLightVelocity;
-    const bool texture_allows = decision.accent ||
+    const bool texture_allows = decision.structural_response ||
+            decision.accent ||
             (debussy_control.texture >= 96u) ||
             (debussy_control.texture >= 64u &&
              decision.beat_in_phrase % 2u == 0u) ||
             (debussy_control.texture >= 32u &&
              decision.beat_in_phrase % 3u == 0u) ||
             (debussy_control.texture > 0u && decision.phrase_boundary);
+    if (decision.active_voice_count == 0u) {
+        stop_debussy_midi();
+        return;
+    }
     if (decision.phrase_boundary || !debussy_pedal_active) {
         debussy_replace_voice(&debussy_pedal_active, &debussy_pedal_note,
                 debussy_light_channel,

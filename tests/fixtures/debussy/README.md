@@ -4,15 +4,18 @@ Each CSV is the 180-beat golden event table for a three-minute trace at the
 MIDI exporter's fixed 60 BPM. The matching MIDI uses channel 1 for the plant
 melody and channel 2 for the pedal/colour pair. Both channels use the same
 General MIDI piano program so seed A/B comparisons do not change timbre.
-The pedal holds the harmonic field; the colour voice shadows each melodic
-move from two to nine semitones below it. Light selects the preferred interval
-and scene slowly, so it follows the phrase without becoming a second random
-melody.
+During a sensor response, the pedal holds the harmonic field and the colour
+voice shadows each melodic move from two to nine semitones below it. Stable
+input is real silence: a light or plant gesture opens a bounded phrase, then
+all three voices return to rest. Light selects the preferred interval and scene
+slowly, so it follows the phrase without becoming a second random melody.
 
-- `still_plant_3m`: low plant energy and slow, sub-threshold light drift.
+- `still_plant_3m`: low plant energy and slow, sub-threshold light drift; every
+  beat is silent.
 - `touch_arc_3m`: three isolated touches, roughly one phrase apart, followed by
   a long release to calm.
-- `light_arc_3m`: stable plant while light moves dark → bright → dark.
+- `light_arc_3m`: stable plant while light moves dark → bright → dark; each of
+  four band crossings opens one eight-beat response.
 - Seed A: `0x4d595df4`; seed B: `0x9e3779b9`.
 
 The CSV, not the MIDI serialization, is the musical golden truth. Regenerate

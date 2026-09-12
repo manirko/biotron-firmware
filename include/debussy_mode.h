@@ -119,6 +119,9 @@ typedef struct {
     uint8_t landmark_note;
     uint8_t surprise_cooldown;
     uint8_t touch_theme;
+    uint8_t engagement_beats_left;
+    uint8_t previous_gesture;
+    uint8_t light_motion_latched;
     int8_t touch_arc_direction;
     int8_t current_degree;
 } DebussyState;

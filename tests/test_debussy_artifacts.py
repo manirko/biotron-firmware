@@ -111,7 +111,8 @@ def assert_fixture_semantics(fixture: str, rows: list[dict[str, str]]) -> None:
         assert structural_responses == []
         assert surprises == []
         assert len(scene_changes) == 1
-        assert sum(bool(row["melody_note"]) for row in rows[64:]) <= 52
+        assert all(row["active_voices"] == "0" for row in rows)
+        assert not any(row["melody_note"] for row in rows)
     elif fixture == "touch_arc_3m":
         assert accents == [42, 66, 90]
         assert structural_responses == [42, 66, 90]
@@ -144,7 +145,7 @@ def assert_fixture_semantics(fixture: str, rows: list[dict[str, str]]) -> None:
         assert rows[14]["pedal_note"] == rows[0]["pedal_note"]
     else:
         assert accents == []
-        assert structural_responses == []
+        assert structural_responses == [50, 75, 124, 149]
         assert surprises == []
         assert [row["scene"] for row in scene_changes] == [
             "veils", "cathedral", "pagodas", "cathedral", "veils"

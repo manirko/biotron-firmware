@@ -305,15 +305,42 @@ static void test_debussy_adapter_is_bounded_and_stops_cleanly(void) {
     size_t note_ons = 0;
     for (size_t i = 0; i < midi_log_len; ++i)
         if (midi_log[i].kind == LOG_NOTE_ON) ++note_ons;
-    assert(note_ons >= 2u);
-    assert(note_ons <= 3u);
-    assert(count_event(LOG_NOTE_ON, settings.light_channel, 36) == 0u);
+    assert(note_ons == 0u);
+
+    light_adc = 400u;
+    play_music(4000);
+    for (size_t i = 0; i < midi_log_len; ++i)
+        if (midi_log[i].kind == LOG_NOTE_ON) ++note_ons;
+    assert(note_ons == 3u);
 
     stop_midi();
     size_t note_offs = 0;
     for (size_t i = 0; i < midi_log_len; ++i)
         if (midi_log[i].kind == LOG_NOTE_OFF) ++note_offs;
     assert(note_offs >= note_ons);
+}
+
+static void test_debussy_gesture_phrase_returns_to_midi_silence(void) {
+    reset_fixture();
+    debussy_control.mode = DEBUSSY_MODE_ENABLED;
+    debussy_runtime_reset();
+    play_music(4000); /* establish the sensor baseline without sounding */
+    light_adc = 400u;
+    play_music(4000); /* physical movement opens the eight-beat response */
+    for (unsigned int beat = 1u; beat <= 8u; ++beat) play_music(4000);
+
+    size_t note_ons = 0u;
+    size_t note_offs = 0u;
+    for (size_t i = 0; i < midi_log_len; ++i) {
+        if (midi_log[i].kind == LOG_NOTE_ON) ++note_ons;
+        if (midi_log[i].kind == LOG_NOTE_OFF) ++note_offs;
+    }
+    assert(note_ons > 0u);
+    assert(note_offs == note_ons);
+
+    const size_t events_at_rest = midi_log_len;
+    play_music(4000);
+    assert(midi_log_len == events_at_rest);
 }
 
 static void test_debussy_mix_controls_reach_midi_adapter(void) {
@@ -324,14 +351,17 @@ static void test_debussy_mix_controls_reach_midi_adapter(void) {
     debussy_control.colour_level = 0u;
     debussy_runtime_reset();
     play_music(4000);
+    light_adc = 400u;
+    play_music(4000);
 
     size_t note_ons = 0u;
     for (size_t i = 0; i < midi_log_len; ++i) {
         if (midi_log[i].kind != LOG_NOTE_ON) continue;
         ++note_ons;
-        assert(midi_log[i].velocity == 25u);
+        if (midi_log[i].channel == settings.light_channel)
+            assert(midi_log[i].velocity == 25u);
     }
-    assert(note_ons == 1u);
+    assert(note_ons == 2u); /* pedal plus the causal melody response */
 }
 
 static void test_debussy_light_mute_survives_runtime_restart(void) {
@@ -339,6 +369,8 @@ static void test_debussy_light_mute_survives_runtime_restart(void) {
     debussy_control.mode = DEBUSSY_MODE_ENABLED;
     settings.isMuteLightVelocity = true;
     debussy_runtime_reset();
+    play_music(4000);
+    light_adc = 400u;
     play_music(4000);
 
     assert(count_event(LOG_NOTE_ON, settings.light_channel, 36) == 0u);
@@ -353,6 +385,8 @@ static void test_debussy_light_mute_survives_runtime_restart(void) {
     debussy_runtime_reset();
     midi_log_len = 0u;
     play_music(4000);
+    light_adc = 2800u;
+    play_music(4000);
     for (size_t i = 0; i < midi_log_len; ++i) {
         if (midi_log[i].kind == LOG_NOTE_ON)
             assert(midi_log[i].channel != settings.light_channel);
@@ -363,6 +397,8 @@ static void test_debussy_uses_separate_plant_and_light_channels(void) {
     reset_fixture();
     debussy_control.mode = DEBUSSY_MODE_ENABLED;
     debussy_runtime_reset();
+    play_music(4000);
+    light_adc = 400u;
     play_music(4000);
 
     unsigned int plant_notes = 0u;
@@ -376,7 +412,7 @@ static void test_debussy_uses_separate_plant_and_light_channels(void) {
     assert(light_notes == 2u);
 }
 
-static void test_debussy_colour_waits_for_an_audible_melody(void) {
+static void test_debussy_gesture_bypasses_sparse_texture(void) {
     reset_fixture();
     debussy_control.mode = DEBUSSY_MODE_ENABLED;
     debussy_control.texture = 0u;
@@ -384,6 +420,8 @@ static void test_debussy_colour_waits_for_an_audible_melody(void) {
     debussy_control.colour_level = 48u;
     debussy_runtime_reset();
 
+    play_music(4000);
+    light_adc = 400u;
     for (unsigned int beat = 0u; beat < 7u; ++beat) play_music(4000);
 
     unsigned int light_notes = 0u;
@@ -393,8 +431,8 @@ static void test_debussy_colour_waits_for_an_audible_melody(void) {
         if (midi_log[i].channel == settings.light_channel) ++light_notes;
         if (midi_log[i].channel == settings.plant_channel) ++plant_notes;
     }
-    assert(plant_notes == 0u);
-    assert(light_notes == 2u); /* one pedal + one phrase colour */
+    assert(plant_notes == 1u); /* the user's gesture is never texture-gated */
+    assert(light_notes == 2u); /* one pedal + one colour after the gesture */
 }
 
 int main(void) {
@@ -408,10 +446,11 @@ int main(void) {
     test_plant_mute_keeps_visual_feedback();
     test_light_pitch_targets_the_plant_channel();
     test_debussy_adapter_is_bounded_and_stops_cleanly();
+    test_debussy_gesture_phrase_returns_to_midi_silence();
     test_debussy_mix_controls_reach_midi_adapter();
     test_debussy_light_mute_survives_runtime_restart();
     test_debussy_uses_separate_plant_and_light_channels();
-    test_debussy_colour_waits_for_an_audible_melody();
+    test_debussy_gesture_bypasses_sparse_texture();
     puts("note_lifecycle: identity, replacement, Clock, LED and failure passed");
     return 0;
 }

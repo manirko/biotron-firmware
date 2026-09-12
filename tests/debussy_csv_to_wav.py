@@ -48,12 +48,13 @@ def render(source: pathlib.Path, destination: pathlib.Path) -> None:
         pedal = frequency(int(row["pedal_note"]))
         colour = frequency(int(row["colour_note"]))
         breath = 0.86 + 0.14 * math.sin(2.0 * math.pi * 0.083 * time)
-        left = breath * (
+        harmony_gain = 1.0 if int(row["active_voices"]) >= 2 else 0.0
+        left = harmony_gain * breath * (
             0.050 * math.sin(2.0 * math.pi * pedal * time)
             + 0.018 * math.sin(2.0 * math.pi * pedal * 2.0 * time)
             + 0.033 * math.sin(2.0 * math.pi * colour * time)
         )
-        right = breath * (
+        right = harmony_gain * breath * (
             0.047 * math.sin(2.0 * math.pi * pedal * time + 0.08)
             + 0.020 * math.sin(2.0 * math.pi * pedal * 2.0 * time + 0.12)
             + 0.036 * math.sin(2.0 * math.pi * colour * time + 0.05)

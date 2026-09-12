@@ -43,12 +43,20 @@ def event_track(rows: Iterable[dict[str, str]]) -> bytes:
 
         requested_pedal = int(row["pedal_note"])
         requested_colour = int(row["colour_note"])
-        if requested_pedal != pedal_note:
+        harmony_active = int(row["active_voices"]) >= 2
+        if not harmony_active:
+            if pedal_note is not None:
+                events.append((tick, 1, bytes((0x81, pedal_note, 0))))
+                pedal_note = None
+            if colour_note is not None:
+                events.append((tick, 1, bytes((0x81, colour_note, 0))))
+                colour_note = None
+        elif requested_pedal != pedal_note:
             if pedal_note is not None:
                 events.append((tick, 1, bytes((0x81, pedal_note, 0))))
             events.append((tick, 2, bytes((0x91, requested_pedal, 42))))
             pedal_note = requested_pedal
-        if requested_colour != colour_note:
+        if harmony_active and requested_colour != colour_note:
             if colour_note is not None:
                 events.append((tick, 1, bytes((0x81, colour_note, 0))))
             events.append((tick, 2, bytes((0x91, requested_colour, 46))))
@@ -77,7 +85,8 @@ def event_track(rows: Iterable[dict[str, str]]) -> bytes:
         track.extend(variable_length(tick - previous_tick))
         track.extend(message)
         previous_tick = tick
-    track.extend(b"\x00\xff\x2f\x00")
+    track.extend(variable_length(end_tick - previous_tick))
+    track.extend(b"\xff\x2f\x00")
     return bytes(track)
 
 
