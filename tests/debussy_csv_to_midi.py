@@ -32,7 +32,8 @@ def event_track(rows: Iterable[dict[str, str]]) -> bytes:
     ]
     melody_note: int | None = None
     melody_off_tick = 0
-    harmony_notes: tuple[int, int] | None = None
+    pedal_note: int | None = None
+    colour_note: int | None = None
 
     for row in source:
         tick = int(row["beat"]) * TICKS_PER_BEAT
@@ -40,14 +41,18 @@ def event_track(rows: Iterable[dict[str, str]]) -> bytes:
             events.append((melody_off_tick, 1, bytes((0x80, melody_note, 0))))
             melody_note = None
 
-        requested_harmony = (int(row["pedal_note"]), int(row["colour_note"]))
-        if harmony_notes is None or row["colour_changed"] == "1":
-            if harmony_notes is not None:
-                for note in harmony_notes:
-                    events.append((tick, 1, bytes((0x81, note, 0))))
-            for note in requested_harmony:
-                events.append((tick, 2, bytes((0x91, note, 46))))
-            harmony_notes = requested_harmony
+        requested_pedal = int(row["pedal_note"])
+        requested_colour = int(row["colour_note"])
+        if requested_pedal != pedal_note:
+            if pedal_note is not None:
+                events.append((tick, 1, bytes((0x81, pedal_note, 0))))
+            events.append((tick, 2, bytes((0x91, requested_pedal, 42))))
+            pedal_note = requested_pedal
+        if requested_colour != colour_note:
+            if colour_note is not None:
+                events.append((tick, 1, bytes((0x81, colour_note, 0))))
+            events.append((tick, 2, bytes((0x91, requested_colour, 46))))
+            colour_note = requested_colour
 
         if row["melody_note"]:
             if melody_note is not None:
@@ -62,8 +67,8 @@ def event_track(rows: Iterable[dict[str, str]]) -> bytes:
     if melody_note is not None:
         events.append((min(melody_off_tick, end_tick), 1,
                        bytes((0x80, melody_note, 0))))
-    if harmony_notes is not None:
-        for note in harmony_notes:
+    for note in (pedal_note, colour_note):
+        if note is not None:
             events.append((end_tick, 1, bytes((0x81, note, 0))))
 
     track = bytearray()

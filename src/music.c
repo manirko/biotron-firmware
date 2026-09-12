@@ -46,7 +46,8 @@ static bool debussy_melody_active = false;
 static uint8_t debussy_pedal_note = 0u;
 static uint8_t debussy_colour_note = 0u;
 static uint8_t debussy_melody_note = 0u;
-static uint8_t debussy_channel = 1u;
+static uint8_t debussy_melody_channel = 1u;
+static uint8_t debussy_light_channel = 2u;
 static uint8_t debussy_melody_beats_left = 0u;
 static uint16_t debussy_last_light = MAX_OF_LIGHT / 2u;
 
@@ -97,16 +98,23 @@ static uint8_t debussy_register_note(uint8_t note) {
     return (uint8_t)shifted;
 }
 
-static void debussy_note_off_if_active(bool *active, uint8_t note) {
+static void debussy_note_off_if_active(bool *active, uint8_t channel,
+                                       uint8_t note) {
     if (!*active) return;
-    note_off(debussy_channel, note);
+    note_off(channel, note);
     *active = false;
 }
 
 static void stop_debussy_midi(void) {
-    debussy_note_off_if_active(&debussy_melody_active, debussy_melody_note);
-    debussy_note_off_if_active(&debussy_colour_active, debussy_colour_note);
-    debussy_note_off_if_active(&debussy_pedal_active, debussy_pedal_note);
+    debussy_note_off_if_active(&debussy_melody_active,
+                               debussy_melody_channel,
+                               debussy_melody_note);
+    debussy_note_off_if_active(&debussy_colour_active,
+                               debussy_light_channel,
+                               debussy_colour_note);
+    debussy_note_off_if_active(&debussy_pedal_active,
+                               debussy_light_channel,
+                               debussy_pedal_note);
     debussy_melody_beats_left = 0u;
 }
 
@@ -150,11 +158,12 @@ static DebussyInput debussy_sensor_input(void) {
 }
 
 static void debussy_replace_voice(bool *active, uint8_t *active_note,
-                                  uint8_t note, uint8_t velocity) {
-    if (*active && *active_note == note) return;
-    debussy_note_off_if_active(active, *active_note);
-    if (isMutedByButton || velocity == 0u) return;
-    note_on(debussy_channel, note, velocity);
+                                  uint8_t channel, uint8_t note,
+                                  uint8_t velocity, bool muted) {
+    if (*active && *active_note == note && !muted && velocity > 0u) return;
+    debussy_note_off_if_active(active, channel, *active_note);
+    if (muted || velocity == 0u) return;
+    note_on(channel, note, velocity);
     *active_note = note;
     *active = true;
 }
@@ -164,7 +173,8 @@ static void play_debussy(void) {
         const uint32_t seed = debussy_control.seed_variant == 0u ?
                 UINT32_C(0x4d595df4) : UINT32_C(0x9e3779b9);
         debussy_init(&debussy_state, seed);
-        debussy_channel = biotron_midi_channel(settings.plant_channel);
+        debussy_melody_channel = biotron_midi_channel(settings.plant_channel);
+        debussy_light_channel = biotron_midi_channel(settings.light_channel);
         debussy_initialized = true;
     }
 
@@ -172,18 +182,25 @@ static void play_debussy(void) {
         --debussy_melody_beats_left;
         if (debussy_melody_beats_left == 0u)
             debussy_note_off_if_active(&debussy_melody_active,
+                                       debussy_melody_channel,
                                        debussy_melody_note);
     }
 
     const DebussyInput input = debussy_sensor_input();
     const DebussyDecision decision = debussy_step(&debussy_state, &input);
+    const bool light_muted = isMutedByButton ||
+                             settings.isMuteLightVelocity;
     if (decision.phrase_boundary || !debussy_pedal_active) {
         debussy_replace_voice(&debussy_pedal_active, &debussy_pedal_note,
+                debussy_light_channel,
                 debussy_register_note(decision.pedal_note),
-                debussy_control.pedal_level);
+                debussy_control.pedal_level, light_muted);
+    }
+    if (decision.colour_changed || !debussy_colour_active) {
         debussy_replace_voice(&debussy_colour_active, &debussy_colour_note,
+                debussy_light_channel,
                 debussy_register_note(decision.colour_note),
-                debussy_control.colour_level);
+                debussy_control.colour_level, light_muted);
     }
 
     const bool texture_allows = decision.accent ||
@@ -195,15 +212,17 @@ static void play_debussy(void) {
             (debussy_control.texture > 0u && decision.phrase_boundary);
     if (decision.melody_on && texture_allows) {
         debussy_note_off_if_active(&debussy_melody_active,
+                                   debussy_melody_channel,
                                    debussy_melody_note);
         const uint16_t scaled_velocity =
                 (uint16_t)decision.melody_velocity *
                 debussy_control.melody_level + 50u;
         const uint8_t melody_velocity = (uint8_t)MIN(127u,
                                                      scaled_velocity / 100u);
-        if (!isMutedByButton && melody_velocity > 0u) {
+        if (!isMutedByButton && !settings.isMutePlantVelocity &&
+            melody_velocity > 0u) {
             const uint8_t note = debussy_register_note(decision.melody_note);
-            note_on(debussy_channel, note, melody_velocity);
+            note_on(debussy_melody_channel, note, melody_velocity);
 #if BIOTRON_LED_MUSIC_PULSE
             led_music_note_on(LED_SOURCE_PLANT, note,
                               melody_velocity);
@@ -411,12 +430,21 @@ void stop_midi() {
 }
 
 void stop_plant_midi(void) {
+    debussy_note_off_if_active(&debussy_melody_active,
+                               debussy_melody_channel,
+                               debussy_melody_note);
     reset_plant_note_off();
     stop_all_notes(last_note_plant_channel);
     change_pitch(last_note_plant_channel, 0, 64);
 }
 
 void stop_light_midi(void) {
+    debussy_note_off_if_active(&debussy_colour_active,
+                               debussy_light_channel,
+                               debussy_colour_note);
+    debussy_note_off_if_active(&debussy_pedal_active,
+                               debussy_light_channel,
+                               debussy_pedal_note);
     if (light_note_active) {
         note_off(last_note_light_channel, last_note_light);
         light_note_active = false;

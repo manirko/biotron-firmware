@@ -270,6 +270,35 @@ static void select_harmony(DebussyState *state) {
     }
 }
 
+static uint8_t colour_note_for_melody(const DebussyState *state,
+                                      uint8_t melody) {
+    /* Light is a harmonising shadow, not a second unrelated melody. Its slow
+       band still selects the colour interval, while every melodic move gives
+       the companion voice a nearby note in the same collection. */
+    const int preferred_interval = state->light_band == LIGHT_DARK
+                                       ? 7
+                                       : (state->light_band == LIGHT_BRIGHT
+                                              ? 3
+                                              : 5);
+    uint8_t best = state->colour_note;
+    int best_cost = 10000;
+    for (int interval = 2; interval <= 9; ++interval) {
+        const int note = (int)melody - interval;
+        if (note < DEBUSSY_NOTE_MIN ||
+            note == state->pedal_note ||
+            !note_in_collection(state->collection, state->root, note)) {
+            continue;
+        }
+        const int cost = absolute_int(interval - preferred_interval) * 4 +
+                         absolute_int(note - state->colour_note);
+        if (cost < best_cost) {
+            best = (uint8_t)note;
+            best_cost = cost;
+        }
+    }
+    return best;
+}
+
 static uint8_t next_phase(uint8_t phase) {
     if (phase == DEBUSSY_PHASE_RELEASE) return DEBUSSY_PHASE_CALM;
     return (uint8_t)(phase + 1u);
@@ -524,6 +553,13 @@ DebussyDecision debussy_step(DebussyState *state, const DebussyInput *input) {
 
     if (melody_on) {
         decision.melody_note = melody_note(state, input);
+        const uint8_t previous_colour = state->colour_note;
+        state->colour_note = colour_note_for_melody(
+            state, decision.melody_note);
+        decision.colour_note = state->colour_note;
+        colour_changed = colour_changed ||
+                         state->colour_note != previous_colour;
+        decision.colour_changed = colour_changed;
         decision.melody_velocity = structural_response
                                        ? 112u
                                        : (accent

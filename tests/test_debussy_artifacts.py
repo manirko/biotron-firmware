@@ -92,11 +92,11 @@ def assert_fixture_semantics(fixture: str, rows: list[dict[str, str]]) -> None:
     assert len(rows) == trace_beats
     assert [int(row["beat"]) for row in rows] == list(range(trace_beats))
     assert all(int(row["active_voices"]) <= 3 for row in rows)
-    assert all(
-        row["phrase_boundary"] == "1"
-        for row in rows
-        if row["colour_changed"] == "1"
-    )
+    scene_changes = [rows[0]] + [
+        row for previous, row in zip(rows, rows[1:])
+        if row["scene"] != previous["scene"]
+    ]
+    assert all(row["phrase_boundary"] == "1" for row in scene_changes[1:])
 
     accents = [int(row["beat"]) for row in rows if row["accent"] == "1"]
     structural_responses = [
@@ -106,12 +106,11 @@ def assert_fixture_semantics(fixture: str, rows: list[dict[str, str]]) -> None:
     surprises = [
         int(row["beat"]) for row in rows if row["surprise"] == "1"
     ]
-    changes = [row for row in rows if row["colour_changed"] == "1"]
     if fixture == "still_plant_3m":
         assert accents == []
         assert structural_responses == []
         assert surprises == []
-        assert len(changes) == 1
+        assert len(scene_changes) == 1
         assert sum(bool(row["melody_note"]) for row in rows[64:]) <= 52
     elif fixture == "touch_arc_3m":
         assert accents == [42, 66, 90]
@@ -147,7 +146,7 @@ def assert_fixture_semantics(fixture: str, rows: list[dict[str, str]]) -> None:
         assert accents == []
         assert structural_responses == []
         assert surprises == []
-        assert [row["scene"] for row in changes] == [
+        assert [row["scene"] for row in scene_changes] == [
             "veils", "cathedral", "pagodas", "cathedral", "veils"
         ]
 

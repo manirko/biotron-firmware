@@ -81,6 +81,12 @@ static void assert_decision_invariants(const DebussyDecision *decision) {
         assert(decision->melody_duration_beats >= 1u);
         assert(collection_contains(decision->collection, decision->root,
                                    decision->melody_note));
+        const int colour_delta = (int)decision->melody_note -
+                                 (int)decision->colour_note;
+        const int colour_interval = colour_delta < 0 ? -colour_delta
+                                                     : colour_delta;
+        assert(colour_interval >= 2 && colour_interval <= 9);
+        assert(decision->colour_note != decision->pedal_note);
     } else {
         assert(decision->melody_note == DEBUSSY_REST);
         assert(decision->melody_velocity == 0u);
@@ -108,7 +114,7 @@ static void test_fixed_seed_is_exact_and_repeatable(void) {
         trace_hash = hash_decision(trace_hash, &a);
     }
     assert(memcmp(&left, &right, sizeof(left)) == 0);
-    assert(trace_hash == UINT32_C(0x3c117770));
+    assert(trace_hash == UINT32_C(0xba16f54a));
 }
 
 static void test_different_seed_changes_surface_not_rules(void) {
@@ -429,20 +435,73 @@ static void test_collection_contrast_keeps_the_common_root(void) {
     assert(state.root == root);
 }
 
-static void test_noisy_light_does_not_retrigger_colour(void) {
+static void test_noisy_light_does_not_retrigger_scene(void) {
     DebussyState state;
     debussy_init(&state, UINT32_C(0x9e3779b9));
-    unsigned int changes_after_initial_phrase = 0u;
+    uint8_t settled_scene = DEBUSSY_SCENE_COUNT;
+    unsigned int scene_changes = 0u;
 
     for (unsigned int beat = 0; beat < TRACE_BEATS; ++beat) {
         DebussyInput input = still_input(beat);
         input.light_level = (uint8_t)(62u + beat % 5u);
         input.light_change = (uint8_t)(beat % 3u);
         const DebussyDecision decision = debussy_step(&state, &input);
-        if (beat >= 16u && decision.colour_changed)
-            ++changes_after_initial_phrase;
+        if (beat == 15u) settled_scene = decision.scene;
+        if (beat >= 16u && decision.scene != settled_scene) ++scene_changes;
     }
-    assert(changes_after_initial_phrase == 0u);
+    assert(scene_changes == 0u);
+}
+
+static void test_colour_voice_shadows_the_melody(void) {
+    DebussyState state;
+    debussy_init(&state, UINT32_C(0x9e3779b9));
+    uint8_t previous_melody = DEBUSSY_REST;
+    uint8_t previous_colour = DEBUSSY_REST;
+    unsigned int melody_moves = 0u;
+    unsigned int parallel_moves = 0u;
+    unsigned int colour_moves = 0u;
+
+    for (unsigned int beat = 0; beat < TRACE_BEATS * 3u; ++beat) {
+        const DebussyInput input = varied_input(beat);
+        const DebussyDecision decision = debussy_step(&state, &input);
+        if (previous_colour != DEBUSSY_REST) {
+            if (decision.colour_note != previous_colour)
+                assert(decision.colour_changed);
+            if (decision.colour_changed && !decision.phrase_boundary)
+                assert(decision.colour_note != previous_colour);
+        }
+        if (!decision.melody_on) {
+            previous_colour = decision.colour_note;
+            continue;
+        }
+
+        const int interval = (int)decision.melody_note -
+                             (int)decision.colour_note;
+        assert(interval >= 2 && interval <= 9);
+        assert(decision.colour_note != decision.pedal_note);
+        if (previous_melody != DEBUSSY_REST &&
+            decision.melody_note != previous_melody) {
+            ++melody_moves;
+            const int melody_direction = (int)decision.melody_note -
+                                         (int)previous_melody;
+            const int colour_direction = (int)decision.colour_note -
+                                         (int)previous_colour;
+            if (colour_direction != 0 &&
+                (melody_direction < 0) == (colour_direction < 0)) {
+                ++parallel_moves;
+            }
+        }
+        if (previous_colour != DEBUSSY_REST &&
+            decision.colour_note != previous_colour) {
+            ++colour_moves;
+        }
+        previous_melody = decision.melody_note;
+        previous_colour = decision.colour_note;
+    }
+
+    assert(melody_moves > 20u);
+    assert(colour_moves > 20u);
+    assert(parallel_moves * 4u >= melody_moves * 3u);
 }
 
 static void test_melodic_repeats_and_leaps_are_bounded(void) {
@@ -559,7 +618,8 @@ int main(void) {
     test_randomness_never_decides_inside_a_phrase();
     test_each_phrase_returns_to_the_motif_beginning();
     test_collection_contrast_keeps_the_common_root();
-    test_noisy_light_does_not_retrigger_colour();
+    test_noisy_light_does_not_retrigger_scene();
+    test_colour_voice_shadows_the_melody();
     test_melodic_repeats_and_leaps_are_bounded();
     test_ten_thousand_extreme_sensor_beats();
     puts("debussy_mode: golden trace and musical invariants passed");
