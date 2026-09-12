@@ -186,6 +186,20 @@ static uint8_t observed_light_band(uint8_t level) {
 
 static bool observe_light(DebussyState *state, const DebussyInput *input) {
     const uint8_t observed = observed_light_band(input->light_level);
+    if (input->light_muted) {
+        state->light_was_muted = 1u;
+        state->light_motion_latched = 0u;
+        state->pending_light_band = LIGHT_UNSET;
+        return false;
+    }
+    if (state->light_was_muted) {
+        state->light_was_muted = 0u;
+        state->light_band = observed;
+        state->light_candidate_band = observed;
+        state->light_candidate_beats = 1u;
+        state->pending_light_band = observed;
+        return false;
+    }
     if (state->light_band == LIGHT_UNSET) {
         state->light_band = observed;
         state->light_candidate_band = observed;
@@ -529,6 +543,7 @@ DebussyDecision debussy_step(DebussyState *state, const DebussyInput *input) {
         if (!state->touch_latched) {
             state->touch_latched = 1u;
             accent = true;
+            state->engagement_source = DEBUSSY_RESPONSE_PLANT;
             if (!state->touch_arc_active && state->surprise_cooldown == 0u) {
                 start_touch_arc(state, input);
                 structural_response = true;
@@ -547,8 +562,16 @@ DebussyDecision debussy_step(DebussyState *state, const DebussyInput *input) {
     if (light_response || plant_motion_response) {
         structural_response = true;
         state->engagement_beats_left = 8u;
+        state->engagement_source = plant_motion_response
+                                       ? DEBUSSY_RESPONSE_PLANT
+                                       : DEBUSSY_RESPONSE_LIGHT;
         state->motif_index = 0u;
         state->current_degree = (int8_t)state->motif[0];
+    }
+    if (input->light_muted &&
+        state->engagement_source == DEBUSSY_RESPONSE_LIGHT) {
+        state->engagement_beats_left = 0u;
+        state->engagement_source = DEBUSSY_RESPONSE_NONE;
     }
 
     const uint8_t arc_stage = touch_arc_stage(state);
@@ -609,6 +632,8 @@ DebussyDecision debussy_step(DebussyState *state, const DebussyInput *input) {
     advance_touch_arc(state);
     if (state->engagement_beats_left > 0u)
         --state->engagement_beats_left;
+    if (state->engagement_beats_left == 0u && !state->touch_arc_active)
+        state->engagement_source = DEBUSSY_RESPONSE_NONE;
     state->previous_gesture = input->gesture;
     return decision;
 }

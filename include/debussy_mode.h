@@ -55,6 +55,12 @@ typedef enum {
     DEBUSSY_ARC_STAGE_COUNT,
 } DebussyArcStage;
 
+typedef enum {
+    DEBUSSY_RESPONSE_NONE = 0,
+    DEBUSSY_RESPONSE_PLANT,
+    DEBUSSY_RESPONSE_LIGHT,
+} DebussyResponseSource;
+
 /* Normalized sensor features supplied once per musical beat. */
 typedef struct {
     uint8_t plant_energy;
@@ -62,6 +68,7 @@ typedef struct {
     uint8_t gesture;
     uint8_t light_level;
     uint8_t light_change;
+    bool light_muted;
 } DebussyInput;
 
 /* Pure musical intention. MIDI lifecycle remains the adapter's concern. */
@@ -122,6 +129,8 @@ typedef struct {
     uint8_t engagement_beats_left;
     uint8_t previous_gesture;
     uint8_t light_motion_latched;
+    uint8_t light_was_muted;
+    uint8_t engagement_source;
     int8_t touch_arc_direction;
     int8_t current_degree;
 } DebussyState;

@@ -161,6 +161,7 @@ static DebussyInput debussy_sensor_input(void) {
         .light_level = debussy_control_scale_light(&debussy_control,
                                                    raw_light),
         .light_change = light_change,
+        .light_muted = settings.isMuteLightVelocity,
     };
 }
 
@@ -459,6 +460,15 @@ void stop_light_midi(void) {
     debussy_note_off_if_active(&debussy_pedal_active,
                                debussy_light_channel,
                                debussy_pedal_note);
+    if (debussy_initialized &&
+        debussy_state.engagement_source == DEBUSSY_RESPONSE_LIGHT) {
+        debussy_note_off_if_active(&debussy_melody_active,
+                                   debussy_melody_channel,
+                                   debussy_melody_note);
+        debussy_melody_beats_left = 0u;
+        debussy_state.engagement_beats_left = 0u;
+        debussy_state.engagement_source = DEBUSSY_RESPONSE_NONE;
+    }
     if (light_note_active) {
         note_off(last_note_light_channel, last_note_light);
         light_note_active = false;

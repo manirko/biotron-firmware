@@ -375,8 +375,7 @@ static void test_debussy_light_mute_survives_runtime_restart(void) {
 
     assert(count_event(LOG_NOTE_ON, settings.light_channel, 36) == 0u);
     for (size_t i = 0; i < midi_log_len; ++i) {
-        if (midi_log[i].kind == LOG_NOTE_ON)
-            assert(midi_log[i].channel != settings.light_channel);
+        assert(midi_log[i].kind != LOG_NOTE_ON);
     }
 
     /* Every Listening Lab edit restarts the composition runtime. A user's
@@ -388,9 +387,35 @@ static void test_debussy_light_mute_survives_runtime_restart(void) {
     light_adc = 2800u;
     play_music(4000);
     for (size_t i = 0; i < midi_log_len; ++i) {
-        if (midi_log[i].kind == LOG_NOTE_ON)
-            assert(midi_log[i].channel != settings.light_channel);
+        assert(midi_log[i].kind != LOG_NOTE_ON);
     }
+}
+
+static void test_debussy_light_mute_stops_its_active_phrase(void) {
+    reset_fixture();
+    debussy_control.mode = DEBUSSY_MODE_ENABLED;
+    debussy_runtime_reset();
+    play_music(4000);
+    light_adc = 400u;
+    play_music(4000);
+
+    size_t note_ons = 0u;
+    for (size_t i = 0; i < midi_log_len; ++i)
+        if (midi_log[i].kind == LOG_NOTE_ON) ++note_ons;
+    assert(note_ons == 3u);
+
+    settings.isMuteLightVelocity = true;
+    stop_light_midi();
+    size_t note_offs = 0u;
+    for (size_t i = 0; i < midi_log_len; ++i)
+        if (midi_log[i].kind == LOG_NOTE_OFF) ++note_offs;
+    assert(note_offs == note_ons);
+
+    const size_t events_after_mute = midi_log_len;
+    light_adc = 3000u;
+    play_music(4000);
+    for (size_t i = events_after_mute; i < midi_log_len; ++i)
+        assert(midi_log[i].kind != LOG_NOTE_ON);
 }
 
 static void test_debussy_uses_separate_plant_and_light_channels(void) {
@@ -449,6 +474,7 @@ int main(void) {
     test_debussy_gesture_phrase_returns_to_midi_silence();
     test_debussy_mix_controls_reach_midi_adapter();
     test_debussy_light_mute_survives_runtime_restart();
+    test_debussy_light_mute_stops_its_active_phrase();
     test_debussy_uses_separate_plant_and_light_channels();
     test_debussy_gesture_bypasses_sparse_texture();
     puts("note_lifecycle: identity, replacement, Clock, LED and failure passed");

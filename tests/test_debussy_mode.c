@@ -198,6 +198,33 @@ static void test_light_motion_answers_immediately_then_returns_to_rest(void) {
     assert(decision.active_voice_count == 0u);
 }
 
+static void test_light_mute_removes_sensor_from_the_composition(void) {
+    DebussyState state;
+    debussy_init(&state, UINT32_C(0x4d595df4));
+    DebussyInput input = still_input(0u);
+    (void)debussy_step(&state, &input);
+
+    input.light_muted = true;
+    input.light_level = 8u;
+    input.light_change = 56u;
+    DebussyDecision decision = debussy_step(&state, &input);
+    assert(!decision.structural_response);
+    assert(!decision.melody_on);
+    assert(decision.active_voice_count == 0u);
+
+    input.light_muted = false;
+    input.light_change = 0u;
+    decision = debussy_step(&state, &input);
+    assert(!decision.structural_response);
+    assert(decision.active_voice_count == 0u);
+
+    input.light_level = 112u;
+    input.light_change = 56u;
+    decision = debussy_step(&state, &input);
+    assert(decision.structural_response);
+    assert(decision.melody_on);
+}
+
 static void test_plant_drift_requires_a_quiet_baseline(void) {
     DebussyState state;
     debussy_init(&state, UINT32_C(0x4d595df4));
@@ -656,6 +683,7 @@ int main(void) {
     test_collection_changes_only_on_phrase_boundaries();
     test_stable_input_stays_silent();
     test_light_motion_answers_immediately_then_returns_to_rest();
+    test_light_mute_removes_sensor_from_the_composition();
     test_plant_drift_requires_a_quiet_baseline();
     test_one_touch_advances_at_most_one_phase_and_accents_once();
     test_boundary_touch_does_not_skip_a_phase();
