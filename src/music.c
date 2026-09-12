@@ -190,19 +190,6 @@ static void play_debussy(void) {
     const DebussyDecision decision = debussy_step(&debussy_state, &input);
     const bool light_muted = isMutedByButton ||
                              settings.isMuteLightVelocity;
-    if (decision.phrase_boundary || !debussy_pedal_active) {
-        debussy_replace_voice(&debussy_pedal_active, &debussy_pedal_note,
-                debussy_light_channel,
-                debussy_register_note(decision.pedal_note),
-                debussy_control.pedal_level, light_muted);
-    }
-    if (decision.colour_changed || !debussy_colour_active) {
-        debussy_replace_voice(&debussy_colour_active, &debussy_colour_note,
-                debussy_light_channel,
-                debussy_register_note(decision.colour_note),
-                debussy_control.colour_level, light_muted);
-    }
-
     const bool texture_allows = decision.accent ||
             (debussy_control.texture >= 96u) ||
             (debussy_control.texture >= 64u &&
@@ -210,6 +197,21 @@ static void play_debussy(void) {
             (debussy_control.texture >= 32u &&
              decision.beat_in_phrase % 3u == 0u) ||
             (debussy_control.texture > 0u && decision.phrase_boundary);
+    if (decision.phrase_boundary || !debussy_pedal_active) {
+        debussy_replace_voice(&debussy_pedal_active, &debussy_pedal_note,
+                debussy_light_channel,
+                debussy_register_note(decision.pedal_note),
+                debussy_control.pedal_level, light_muted);
+    }
+    if (decision.phrase_boundary || !debussy_colour_active ||
+        (decision.melody_on && texture_allows &&
+         decision.colour_changed)) {
+        debussy_replace_voice(&debussy_colour_active, &debussy_colour_note,
+                debussy_light_channel,
+                debussy_register_note(decision.colour_note),
+                debussy_control.colour_level, light_muted);
+    }
+
     if (decision.melody_on && texture_allows) {
         debussy_note_off_if_active(&debussy_melody_active,
                                    debussy_melody_channel,

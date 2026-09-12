@@ -376,6 +376,27 @@ static void test_debussy_uses_separate_plant_and_light_channels(void) {
     assert(light_notes == 2u);
 }
 
+static void test_debussy_colour_waits_for_an_audible_melody(void) {
+    reset_fixture();
+    debussy_control.mode = DEBUSSY_MODE_ENABLED;
+    debussy_control.texture = 0u;
+    debussy_control.pedal_level = 32u;
+    debussy_control.colour_level = 48u;
+    debussy_runtime_reset();
+
+    for (unsigned int beat = 0u; beat < 7u; ++beat) play_music(4000);
+
+    unsigned int light_notes = 0u;
+    unsigned int plant_notes = 0u;
+    for (size_t i = 0; i < midi_log_len; ++i) {
+        if (midi_log[i].kind != LOG_NOTE_ON) continue;
+        if (midi_log[i].channel == settings.light_channel) ++light_notes;
+        if (midi_log[i].channel == settings.plant_channel) ++plant_notes;
+    }
+    assert(plant_notes == 0u);
+    assert(light_notes == 2u); /* one pedal + one phrase colour */
+}
+
 int main(void) {
     test_identity_round_trip();
     test_alarm_keeps_exact_note_identity();
@@ -390,6 +411,7 @@ int main(void) {
     test_debussy_mix_controls_reach_midi_adapter();
     test_debussy_light_mute_survives_runtime_restart();
     test_debussy_uses_separate_plant_and_light_channels();
+    test_debussy_colour_waits_for_an_audible_melody();
     puts("note_lifecycle: identity, replacement, Clock, LED and failure passed");
     return 0;
 }
