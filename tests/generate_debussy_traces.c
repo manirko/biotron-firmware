@@ -67,6 +67,7 @@ static DebussyInput light_arc(unsigned int beat) {
         .gesture = DEBUSSY_GESTURE_STABLE,
         .light_level = level,
         .light_change = absolute_u8_difference(level, previous),
+        .wake_threshold = 2u,
     };
     return input;
 }

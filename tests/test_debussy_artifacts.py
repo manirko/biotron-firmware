@@ -115,9 +115,11 @@ def assert_fixture_semantics(fixture: str, rows: list[dict[str, str]]) -> None:
         assert not any(row["melody_note"] for row in rows)
     elif fixture == "touch_arc_3m":
         assert accents == [42, 66, 90]
-        assert structural_responses == [42, 66, 90]
+        assert structural_responses == (
+            list(range(38, 50)) + list(range(62, 74)) + list(range(86, 98))
+        )
         assert surprises == [46, 70, 94]
-        for touch in structural_responses:
+        for touch in accents:
             reveal = rows[touch + 4]
             returning = rows[touch + 8]
             assert reveal["arc_stage"] == "reveal"
@@ -132,7 +134,7 @@ def assert_fixture_semantics(fixture: str, rows: list[dict[str, str]]) -> None:
         assert rows[-1]["phase"] == "calm"
     elif fixture == "viral_touch_15s":
         assert accents == [2]
-        assert structural_responses == [2]
+        assert structural_responses == list(range(10))
         assert surprises == [6]
         assert rows[6]["arc_stage"] == "reveal"
         assert rows[6]["melody_note"] == rows[6]["landmark_note"]
@@ -145,7 +147,7 @@ def assert_fixture_semantics(fixture: str, rows: list[dict[str, str]]) -> None:
         assert rows[14]["pedal_note"] == rows[0]["pedal_note"]
     else:
         assert accents == []
-        assert structural_responses == [50, 75, 124, 149]
+        assert structural_responses == list(range(43, 83)) + list(range(117, 157))
         assert surprises == []
         assert [row["scene"] for row in scene_changes] == [
             "veils", "cathedral", "pagodas", "cathedral", "veils"

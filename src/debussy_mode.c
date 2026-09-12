@@ -184,11 +184,18 @@ static uint8_t observed_light_band(uint8_t level) {
     return LIGHT_MIDDLE;
 }
 
+static uint8_t wake_threshold(const DebussyInput *input) {
+    /* Zero keeps old fixtures and callers safe; production supplies the
+       existing Wake-Up setting so plant and light do not invent extra gates. */
+    return input->wake_threshold == 0u ? 8u : input->wake_threshold;
+}
+
 static bool observe_light(DebussyState *state, const DebussyInput *input) {
     const uint8_t observed = observed_light_band(input->light_level);
     if (input->light_muted) {
         state->light_was_muted = 1u;
-        state->light_motion_latched = 0u;
+        state->light_level_valid = 0u;
+        state->light_direction = DEBUSSY_DIRECTION_STABLE;
         state->pending_light_band = LIGHT_UNSET;
         return false;
     }
@@ -198,6 +205,9 @@ static bool observe_light(DebussyState *state, const DebussyInput *input) {
         state->light_candidate_band = observed;
         state->light_candidate_beats = 1u;
         state->pending_light_band = observed;
+        state->previous_light_level = input->light_level;
+        state->light_level_valid = 1u;
+        state->light_direction = DEBUSSY_DIRECTION_STABLE;
         return false;
     }
     if (state->light_band == LIGHT_UNSET) {
@@ -205,19 +215,27 @@ static bool observe_light(DebussyState *state, const DebussyInput *input) {
         state->light_candidate_band = observed;
         state->light_candidate_beats = 1u;
         state->pending_light_band = LIGHT_UNSET;
+        state->previous_light_level = input->light_level;
+        state->light_level_valid = 1u;
+        state->light_direction = DEBUSSY_DIRECTION_STABLE;
         return false;
     }
 
-    const bool band_edge = observed != state->light_band &&
-                           observed != state->light_candidate_band;
-    bool motion_response = false;
-    if ((band_edge || input->light_change >= 8u) &&
-        !state->light_motion_latched) {
-        state->light_motion_latched = 1u;
-        motion_response = true;
-    } else if (input->light_change < 4u) {
-        state->light_motion_latched = 0u;
+    state->light_direction = DEBUSSY_DIRECTION_STABLE;
+    if (state->light_level_valid &&
+        input->light_level > state->previous_light_level) {
+        state->light_direction = DEBUSSY_DIRECTION_RISING;
+    } else if (state->light_level_valid &&
+               input->light_level < state->previous_light_level) {
+        state->light_direction = DEBUSSY_DIRECTION_FALLING;
     }
+    state->previous_light_level = input->light_level;
+    state->light_level_valid = 1u;
+
+    /* Every sampled physical move is playable. Wake-Up is the single noise
+       gate; the old latch made a moving hand behave like a one-shot button. */
+    const bool motion_response =
+        input->light_change >= wake_threshold(input);
 
     if (observed != state->light_candidate_band) {
         state->light_candidate_band = observed;
@@ -310,17 +328,21 @@ static uint8_t colour_note_for_melody(const DebussyState *state,
     uint8_t best = state->colour_note;
     int best_cost = 10000;
     for (int interval = 2; interval <= 9; ++interval) {
-        const int note = (int)melody - interval;
-        if (note < DEBUSSY_NOTE_MIN ||
-            note == state->pedal_note ||
-            !note_in_collection(state->collection, state->root, note)) {
-            continue;
-        }
-        const int cost = absolute_int(interval - preferred_interval) * 4 +
-                         absolute_int(note - state->colour_note);
-        if (cost < best_cost) {
-            best = (uint8_t)note;
-            best_cost = cost;
+        for (int side = -1; side <= 1; side += 2) {
+            const int note = (int)melody + side * interval;
+            if (note < DEBUSSY_NOTE_MIN || note > DEBUSSY_NOTE_MAX ||
+                note == state->pedal_note ||
+                !note_in_collection(state->collection, state->root, note)) {
+                continue;
+            }
+            const int upper_penalty = side > 0 ? 2 : 0;
+            const int cost = absolute_int(interval - preferred_interval) * 4 +
+                             absolute_int(note - state->colour_note) +
+                             upper_penalty;
+            if (cost < best_cost) {
+                best = (uint8_t)note;
+                best_cost = cost;
+            }
         }
     }
     return best;
@@ -432,9 +454,14 @@ static uint8_t melody_note(DebussyState *state, const DebussyInput *input) {
     }
 
     int target_degree = transformed_motif_degree(state);
-    if (input->gesture == DEBUSSY_GESTURE_DRIFT &&
-        state->motif_index % 3u == 2u) {
-        target_degree += input->plant_direction;
+    if (state->engagement_source == DEBUSSY_RESPONSE_LIGHT &&
+        input->light_change >= wake_threshold(input) &&
+        state->light_direction != DEBUSSY_DIRECTION_STABLE) {
+        target_degree = state->current_degree + state->light_direction;
+    } else if (state->engagement_source == DEBUSSY_RESPONSE_PLANT &&
+               input->gesture == DEBUSSY_GESTURE_DRIFT &&
+               input->plant_direction != DEBUSSY_DIRECTION_STABLE) {
+        target_degree = state->current_degree + input->plant_direction;
     }
 
     int movement = target_degree - state->current_degree;
@@ -472,23 +499,6 @@ static uint8_t melody_note(DebussyState *state, const DebussyInput *input) {
     state->motif_index = (uint8_t)((state->motif_index + 1u) %
                                    state->motif_length);
     return note;
-}
-
-static bool rhythmic_onset(const DebussyState *state) {
-    static const uint16_t masks[3][DEBUSSY_PHASE_COUNT] = {
-        {UINT16_C(0x049), UINT16_C(0x06d), UINT16_C(0x0ef), UINT16_C(0x049)},
-        {UINT16_C(0x129), UINT16_C(0x1ad), UINT16_C(0x1bb), UINT16_C(0x089)},
-        {UINT16_C(0x111), UINT16_C(0x555), UINT16_C(0x6db), UINT16_C(0x511)},
-    };
-    uint8_t length_index = 0u;
-    if (state->phrase_length == 10u) length_index = 1u;
-    if (state->phrase_length == 12u) length_index = 2u;
-    if (state->phase == DEBUSSY_PHASE_CALM && state->stable_beats >= 20u) {
-        return state->beat_in_phrase == 0u ||
-               state->beat_in_phrase == state->phrase_length / 2u;
-    }
-    return (masks[length_index][state->phase] &
-            (UINT16_C(1) << state->beat_in_phrase)) != 0u;
 }
 
 void debussy_init(DebussyState *state, uint32_t seed) {
@@ -554,19 +564,25 @@ DebussyDecision debussy_step(DebussyState *state, const DebussyInput *input) {
         state->touch_latched = 0u;
     }
 
+    const bool continuing_plant_motion =
+        state->engagement_source == DEBUSSY_RESPONSE_PLANT &&
+        state->engagement_beats_left > 0u;
     const bool plant_motion_response =
         input->gesture == DEBUSSY_GESTURE_DRIFT &&
-        state->previous_gesture == DEBUSSY_GESTURE_STABLE &&
-        quiet_beats_before >= 3u &&
-        input->plant_energy >= 32u;
+        input->plant_energy >= wake_threshold(input) &&
+        ((state->previous_gesture == DEBUSSY_GESTURE_STABLE &&
+          quiet_beats_before >= 3u) || continuing_plant_motion);
     if (light_response || plant_motion_response) {
+        const bool beginning_gesture = state->engagement_beats_left == 0u;
         structural_response = true;
-        state->engagement_beats_left = 8u;
+        state->engagement_beats_left = 3u;
         state->engagement_source = plant_motion_response
                                        ? DEBUSSY_RESPONSE_PLANT
                                        : DEBUSSY_RESPONSE_LIGHT;
-        state->motif_index = 0u;
-        state->current_degree = (int8_t)state->motif[0];
+        if (beginning_gesture) {
+            state->motif_index = 0u;
+            state->current_degree = (int8_t)state->motif[0];
+        }
     }
     if (input->light_muted &&
         state->engagement_source == DEBUSSY_RESPONSE_LIGHT) {
@@ -577,11 +593,13 @@ DebussyDecision debussy_step(DebussyState *state, const DebussyInput *input) {
     const uint8_t arc_stage = touch_arc_stage(state);
     const bool engaged = state->touch_arc_active ||
                          state->engagement_beats_left > 0u;
+    const bool gesture_tail = !state->touch_arc_active &&
+                              state->engagement_beats_left == 1u;
     const bool melody_on = engaged &&
                            (accent || structural_response ||
                             (state->touch_arc_active
                                  ? touch_arc_onset(state)
-                                 : rhythmic_onset(state)));
+                                 : gesture_tail));
 
     decision.scene = state->scene;
     decision.phase = state->phase;

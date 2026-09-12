@@ -5,17 +5,18 @@ MIDI exporter's fixed 60 BPM. The matching MIDI uses channel 1 for the plant
 melody and channel 2 for the pedal/colour pair. Both channels use the same
 General MIDI piano program so seed A/B comparisons do not change timbre.
 During a sensor response, the pedal holds the harmonic field and the colour
-voice shadows each melodic move from two to nine semitones below it. Stable
-input is real silence: a light or plant gesture opens a bounded phrase, then
-all three voices return to rest. Light selects the preferred interval and scene
-slowly, so it follows the phrase without becoming a second random melody.
+voice shadows each melodic move from two to nine semitones on either side.
+Stable input is real silence: each continuing hand movement advances the
+melody, while stopping leaves one short resolving echo before all three voices
+return to rest. Light selects the preferred interval and scene slowly, so it
+steers one melody without becoming a second random voice.
 
 - `still_plant_3m`: low plant energy and slow, sub-threshold light drift; every
   beat is silent.
-- `touch_arc_3m`: three isolated touches, roughly one phrase apart, followed by
-  a long release to calm.
-- `light_arc_3m`: stable plant while light moves dark → bright → dark; each of
-  four band crossings opens one eight-beat response.
+- `touch_arc_3m`: three approach–touch–release gestures, roughly one phrase
+  apart, followed by a long release to calm.
+- `light_arc_3m`: stable plant while a hand moves continuously over the light
+  sensor, dark → bright → dark; every above-Wake-Up movement advances a note.
 - Seed A: `0x4d595df4`; seed B: `0x9e3779b9`.
 
 The CSV, not the MIDI serialization, is the musical golden truth. Regenerate

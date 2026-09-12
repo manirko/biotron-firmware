@@ -154,6 +154,8 @@ static DebussyInput debussy_sensor_input(void) {
     const uint8_t light_change = debussy_control.light_influence == 0u
                                      ? 0u
                                      : raw_light_change;
+    const uint8_t wake = (uint8_t)MAX(2u, MIN(20u,
+            (uint32_t)(settings.firstValue * 20.0 + 0.5)));
     return (DebussyInput){
         .plant_energy = energy,
         .plant_direction = direction,
@@ -161,6 +163,7 @@ static DebussyInput debussy_sensor_input(void) {
         .light_level = debussy_control_scale_light(&debussy_control,
                                                    raw_light),
         .light_change = light_change,
+        .wake_threshold = wake,
         .light_muted = settings.isMuteLightVelocity,
     };
 }

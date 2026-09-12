@@ -68,6 +68,7 @@ typedef struct {
     uint8_t gesture;
     uint8_t light_level;
     uint8_t light_change;
+    uint8_t wake_threshold;
     bool light_muted;
 } DebussyInput;
 
@@ -128,9 +129,11 @@ typedef struct {
     uint8_t touch_theme;
     uint8_t engagement_beats_left;
     uint8_t previous_gesture;
-    uint8_t light_motion_latched;
     uint8_t light_was_muted;
     uint8_t engagement_source;
+    uint8_t previous_light_level;
+    uint8_t light_level_valid;
+    int8_t light_direction;
     int8_t touch_arc_direction;
     int8_t current_degree;
 } DebussyState;

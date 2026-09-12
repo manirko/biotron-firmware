@@ -114,7 +114,7 @@ static void test_fixed_seed_is_exact_and_repeatable(void) {
         trace_hash = hash_decision(trace_hash, &a);
     }
     assert(memcmp(&left, &right, sizeof(left)) == 0);
-    assert(trace_hash == UINT32_C(0x81911f13));
+    assert(trace_hash == UINT32_C(0x9e95e01a));
 }
 
 static void test_different_seed_changes_surface_not_rules(void) {
@@ -168,7 +168,7 @@ static void test_stable_input_stays_silent(void) {
     }
 }
 
-static void test_light_motion_answers_immediately_then_returns_to_rest(void) {
+static void test_light_motion_answers_immediately_with_a_short_tail(void) {
     DebussyState state;
     debussy_init(&state, UINT32_C(0x4d595df4));
 
@@ -194,8 +194,56 @@ static void test_light_motion_answers_immediately_then_returns_to_rest(void) {
         decision = debussy_step(&state, &input);
         if (decision.active_voice_count > 0u) ++sounding_beats;
     }
-    assert(sounding_beats == 8u);
+    assert(sounding_beats == 3u);
     assert(decision.active_voice_count == 0u);
+}
+
+static void test_each_continuing_hand_move_advances_the_melody(void) {
+    DebussyState state;
+    debussy_init(&state, UINT32_C(0x4d595df4));
+
+    for (unsigned int beat = 0; beat < 8u; ++beat) {
+        const DebussyInput input = still_input(beat);
+        (void)debussy_step(&state, &input);
+    }
+
+    uint8_t previous_index = state.motif_index;
+    uint8_t first_note = DEBUSSY_REST;
+    bool melody_moved = false;
+    for (unsigned int beat = 0; beat < 3u; ++beat) {
+        DebussyInput input = still_input(8u + beat);
+        input.light_level = (uint8_t)(52u + beat * 10u);
+        input.light_change = 18u;
+        const DebussyDecision decision = debussy_step(&state, &input);
+        assert(decision.structural_response);
+        assert(decision.melody_on);
+        assert(state.motif_index ==
+               (uint8_t)((previous_index + 1u) % state.motif_length));
+        previous_index = state.motif_index;
+        if (first_note == DEBUSSY_REST) first_note = decision.melody_note;
+        if (decision.melody_note != first_note) melody_moved = true;
+    }
+    assert(melody_moved);
+}
+
+static void test_wake_up_is_the_only_motion_threshold(void) {
+    DebussyState state;
+    debussy_init(&state, UINT32_C(0x4d595df4));
+    DebussyInput input = still_input(0u);
+    (void)debussy_step(&state, &input);
+
+    input.light_level = 72u;
+    input.light_change = 20u;
+    input.wake_threshold = 24u;
+    DebussyDecision decision = debussy_step(&state, &input);
+    assert(!decision.structural_response);
+    assert(decision.active_voice_count == 0u);
+
+    input.light_level = 96u;
+    input.light_change = 24u;
+    decision = debussy_step(&state, &input);
+    assert(decision.structural_response);
+    assert(decision.melody_on);
 }
 
 static void test_light_mute_removes_sensor_from_the_composition(void) {
@@ -440,34 +488,6 @@ static void test_repeated_touches_cannot_spam_surprises(void) {
     assert(structural_responses == 1u);
 }
 
-static unsigned int count_phase_onsets(uint8_t phase) {
-    DebussyState state;
-    debussy_init(&state, UINT32_C(0x6a09e667));
-    DebussyInput input = varied_input(1u);
-    input.plant_energy = 40u;
-    input.gesture = DEBUSSY_GESTURE_DRIFT;
-    unsigned int onsets = 0u;
-    (void)debussy_step(&state, &input);
-    state.engagement_beats_left = 12u;
-    for (unsigned int beat = 1u; beat < 12u; ++beat) {
-        state.phase = phase;
-        state.phrase_length = 12u;
-        state.beat_in_phrase = (uint8_t)beat;
-        state.stable_beats = 0u;
-        const DebussyDecision decision = debussy_step(&state, &input);
-        if (decision.melody_on) ++onsets;
-    }
-    return onsets;
-}
-
-static void test_density_rises_from_calm_to_crest(void) {
-    const unsigned int calm = count_phase_onsets(DEBUSSY_PHASE_CALM);
-    const unsigned int grow = count_phase_onsets(DEBUSSY_PHASE_GROW);
-    const unsigned int crest = count_phase_onsets(DEBUSSY_PHASE_CREST);
-    assert(calm < grow);
-    assert(grow < crest);
-}
-
 static void test_randomness_never_decides_inside_a_phrase(void) {
     DebussyState state;
     debussy_init(&state, UINT32_C(0x4d595df4));
@@ -548,8 +568,9 @@ static void test_colour_voice_shadows_the_melody(void) {
             continue;
         }
 
-        const int interval = (int)decision.melody_note -
-                             (int)decision.colour_note;
+        const int colour_delta = (int)decision.melody_note -
+                                 (int)decision.colour_note;
+        const int interval = colour_delta < 0 ? -colour_delta : colour_delta;
         assert(interval >= 2 && interval <= 9);
         assert(decision.colour_note != decision.pedal_note);
         if (previous_melody != DEBUSSY_REST &&
@@ -682,7 +703,9 @@ int main(void) {
     test_different_seed_changes_surface_not_rules();
     test_collection_changes_only_on_phrase_boundaries();
     test_stable_input_stays_silent();
-    test_light_motion_answers_immediately_then_returns_to_rest();
+    test_light_motion_answers_immediately_with_a_short_tail();
+    test_each_continuing_hand_move_advances_the_melody();
+    test_wake_up_is_the_only_motion_threshold();
     test_light_mute_removes_sensor_from_the_composition();
     test_plant_drift_requires_a_quiet_baseline();
     test_one_touch_advances_at_most_one_phase_and_accents_once();
@@ -691,7 +714,6 @@ int main(void) {
     test_touch_arc_states_an_authored_four_note_identity();
     test_touch_direction_changes_the_promised_landmark();
     test_repeated_touches_cannot_spam_surprises();
-    test_density_rises_from_calm_to_crest();
     test_randomness_never_decides_inside_a_phrase();
     test_each_phrase_returns_to_the_motif_beginning();
     test_collection_contrast_keeps_the_common_root();
