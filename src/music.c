@@ -172,6 +172,11 @@ static void debussy_replace_voice(bool *active, uint8_t *active_note,
     debussy_note_off_if_active(active, channel, *active_note);
     if (muted || velocity == 0u) return;
     note_on(channel, note, velocity);
+#if BIOTRON_LED_MUSIC_PULSE
+    /* This helper owns Debussy's pedal and colour voices on the light channel;
+       every audible Note On must reach the same main-loop LED adapter. */
+    led_music_note_on(LED_SOURCE_LIGHT, note, velocity);
+#endif
     *active_note = note;
     *active = true;
 }

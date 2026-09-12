@@ -312,6 +312,7 @@ static void test_debussy_adapter_is_bounded_and_stops_cleanly(void) {
     for (size_t i = 0; i < midi_log_len; ++i)
         if (midi_log[i].kind == LOG_NOTE_ON) ++note_ons;
     assert(note_ons == 3u);
+    assert(led_note_count == note_ons);
 
     stop_midi();
     size_t note_offs = 0;
