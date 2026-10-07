@@ -46,17 +46,21 @@ It removes the abandoned composition experiment from 1.10.8 beta21.
 
 Maintainers should start with [`DEVELOPING.md`](DEVELOPING.md). It explains the runtime ownership model,
 compatibility rules, commit stack, exact build identity, test map and the
-boundary between firmware, Windows/REAPER, offline Settings and Help.
+boundary between firmware, Windows/DAW, offline Settings and Help. The current
+Sergey test uses Ableton, not the historical REAPER task.
 The optional A06-A08 note-and-beat light experiment is documented separately in
-[`LED-MUSIC-PULSE.md`](LED-MUSIC-PULSE.md); it remains disabled by default.
+[`LED-MUSIC-PULSE.md`](LED-MUSIC-PULSE.md). It is ON for this A06–A08/Fibonacci
+clean candidate; see `CLEAN-FIRMWARE.md` for the exact scope.
 
 ```bash
 ./tests/run_host_tests.sh
 ```
 
-`cf264aa` is the last declared `1.8.3` compatibility candidate. Later commits
-on the `codex/*` branches are 1.9.x team-beta code (current `1.9.8 beta-08`,
-`7471707`), not a customer candidate; the next release is planned as `2.0.0`.
+`cf264aa` is the historical `1.8.3` compatibility candidate; `7471707` is
+historical `1.9.8 beta-08`. This cleanup branch's exact runtime source is
+`303aafc`, version `1.10.9`, still an internal candidate. Documentation HEAD is
+not a new firmware version. A customer release/version requires separate
+acceptance; no future `2.0.0` release is authorized by this README.
 CI runs the host suite on every push and pull request
 (`.github/workflows/pull_request_ci.yml`). Passing host tests does not by
 itself authorize a merge or release.

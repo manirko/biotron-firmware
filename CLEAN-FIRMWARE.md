@@ -28,9 +28,17 @@ Source cleanup: 303aafc. UF2 SHA-256:
 On user-confirmed Fibonacci/A08, verified native write and exact 1.10.9
 version/topology passed. Readback passed on both cables; settings vector and
 plant BPM match the initial 1.10.8 baseline. Read-only flash-save delta is zero.
-Thirty-second Paul/P07 mixed stress passed. Current localhost web loaded settings
-and confirmed `Saved on Biotron.` It still targets 1.9.8 for flashing; this is
-not a browser-update acceptance result for 1.10.9.
+Thirty-second Paul/P07 mixed stress passed. At the earlier bench checkpoint,
+localhost web loaded settings and confirmed `Saved on Biotron.` That older
+updater targeted 1.9.8; it was not a browser-update acceptance result for 1.10.9.
+
+Later on 7 October, native 1.10.9 → 1.9.8 → the same exact 1.10.9 completed.
+Persisted settings on both cables and plant BPM matched at all three stages;
+the comparison is preserved in ProjectData under
+`biotron/2026-10-07-garden-release-qa/cycle-settings-comparison.json`.
+The internal web runtime D (`30d978514f67`) now pins the clean 1.10.9 UF2.
+Full browser directory-picker write/readback and the browser rollback/reflash
+cycle remain unverified/BLOCKED; native evidence does not close them.
 
 The original exact 1.10.8 passed source host tests, mixed stress and a
 30-second capture (5 Note On / 5 Note Off, no active or orphan notes).
