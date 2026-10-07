@@ -11,13 +11,11 @@
 #include "leds.h"
 #include "params.h"
 #include "PLSDK/music.h"
-#include "debussy_control.h"
 
 typedef struct {
     uint8_t kind;
     uint8_t channel;
     uint8_t note;
-    uint8_t velocity;
 } midi_log_entry_t;
 
 enum {
@@ -52,11 +50,9 @@ static uint8_t last_led_note = 0;
 static uint8_t last_led_velocity = 0;
 static uint16_t light_adc = 1600;
 
-static void log_midi(uint8_t kind, uint8_t channel, uint8_t note,
-                     uint8_t velocity) {
+static void log_midi(uint8_t kind, uint8_t channel, uint8_t note) {
     assert(midi_log_len < sizeof midi_log / sizeof midi_log[0]);
-    midi_log[midi_log_len++] =
-            (midi_log_entry_t){kind, channel, note, velocity};
+    midi_log[midi_log_len++] = (midi_log_entry_t){kind, channel, note};
 }
 
 static size_t count_event(uint8_t kind, uint8_t channel, uint8_t note) {
@@ -114,20 +110,21 @@ int calculate_note_by_scale(uint8_t start_note, int counter,
 }
 
 void note_on(uint8_t channel, uint8_t note, uint8_t velocity) {
-    log_midi(LOG_NOTE_ON, channel, note, velocity);
+    (void)velocity;
+    log_midi(LOG_NOTE_ON, channel, note);
 }
 
 void note_off(uint8_t channel, uint8_t note) {
-    log_midi(LOG_NOTE_OFF, channel, note, 0u);
+    log_midi(LOG_NOTE_OFF, channel, note);
 }
 
 void change_pitch(uint8_t channel, uint8_t lsb, uint8_t msb) {
     (void)lsb;
-    log_midi(LOG_PITCH, channel, msb, 0u);
+    log_midi(LOG_PITCH, channel, msb);
 }
 
 void stop_all_notes(uint8_t channel) {
-    log_midi(LOG_ALL_NOTES_OFF, channel, 0, 0u);
+    log_midi(LOG_ALL_NOTES_OFF, channel, 0);
 }
 
 static void reset_fixture(void) {
@@ -160,8 +157,6 @@ static void reset_fixture(void) {
     led_note_count = 0;
     led_beat_count = 0;
     light_adc = 1600;
-    debussy_control_default(&debussy_control);
-    debussy_runtime_reset();
 }
 
 static void test_identity_round_trip(void) {
@@ -296,171 +291,6 @@ static void test_plant_mute_keeps_visual_feedback(void) {
     assert(last_led_note == 64);
 }
 
-static void test_debussy_adapter_is_bounded_and_stops_cleanly(void) {
-    reset_fixture();
-    debussy_control.mode = DEBUSSY_MODE_ENABLED;
-    debussy_runtime_reset();
-    play_music(4000);
-
-    size_t note_ons = 0;
-    for (size_t i = 0; i < midi_log_len; ++i)
-        if (midi_log[i].kind == LOG_NOTE_ON) ++note_ons;
-    assert(note_ons == 0u);
-
-    light_adc = 400u;
-    play_music(4000);
-    for (size_t i = 0; i < midi_log_len; ++i)
-        if (midi_log[i].kind == LOG_NOTE_ON) ++note_ons;
-    assert(note_ons == 3u);
-    assert(led_note_count == note_ons);
-
-    stop_midi();
-    size_t note_offs = 0;
-    for (size_t i = 0; i < midi_log_len; ++i)
-        if (midi_log[i].kind == LOG_NOTE_OFF) ++note_offs;
-    assert(note_offs >= note_ons);
-}
-
-static void test_debussy_gesture_phrase_returns_to_midi_silence(void) {
-    reset_fixture();
-    debussy_control.mode = DEBUSSY_MODE_ENABLED;
-    debussy_runtime_reset();
-    play_music(4000); /* establish the sensor baseline without sounding */
-    light_adc = 400u;
-    play_music(4000); /* physical movement opens the eight-beat response */
-    for (unsigned int beat = 1u; beat <= 8u; ++beat) play_music(4000);
-
-    size_t note_ons = 0u;
-    size_t note_offs = 0u;
-    for (size_t i = 0; i < midi_log_len; ++i) {
-        if (midi_log[i].kind == LOG_NOTE_ON) ++note_ons;
-        if (midi_log[i].kind == LOG_NOTE_OFF) ++note_offs;
-    }
-    assert(note_ons > 0u);
-    assert(note_offs == note_ons);
-
-    const size_t events_at_rest = midi_log_len;
-    play_music(4000);
-    assert(midi_log_len == events_at_rest);
-}
-
-static void test_debussy_mix_controls_reach_midi_adapter(void) {
-    reset_fixture();
-    debussy_control.mode = DEBUSSY_MODE_ENABLED;
-    debussy_control.texture = 0u;
-    debussy_control.pedal_level = 25u;
-    debussy_control.colour_level = 0u;
-    debussy_runtime_reset();
-    play_music(4000);
-    light_adc = 400u;
-    play_music(4000);
-
-    size_t note_ons = 0u;
-    for (size_t i = 0; i < midi_log_len; ++i) {
-        if (midi_log[i].kind != LOG_NOTE_ON) continue;
-        ++note_ons;
-        if (midi_log[i].channel == settings.light_channel)
-            assert(midi_log[i].velocity == 25u);
-    }
-    assert(note_ons == 2u); /* pedal plus the causal melody response */
-}
-
-static void test_debussy_light_mute_survives_runtime_restart(void) {
-    reset_fixture();
-    debussy_control.mode = DEBUSSY_MODE_ENABLED;
-    settings.isMuteLightVelocity = true;
-    debussy_runtime_reset();
-    play_music(4000);
-    light_adc = 400u;
-    play_music(4000);
-
-    assert(count_event(LOG_NOTE_ON, settings.light_channel, 36) == 0u);
-    for (size_t i = 0; i < midi_log_len; ++i) {
-        assert(midi_log[i].kind != LOG_NOTE_ON);
-    }
-
-    /* Every Listening Lab edit restarts the composition runtime. A user's
-       light mute remains authoritative across that restart. */
-    debussy_control.texture = 127u;
-    debussy_runtime_reset();
-    midi_log_len = 0u;
-    play_music(4000);
-    light_adc = 2800u;
-    play_music(4000);
-    for (size_t i = 0; i < midi_log_len; ++i) {
-        assert(midi_log[i].kind != LOG_NOTE_ON);
-    }
-}
-
-static void test_debussy_light_mute_stops_its_active_phrase(void) {
-    reset_fixture();
-    debussy_control.mode = DEBUSSY_MODE_ENABLED;
-    debussy_runtime_reset();
-    play_music(4000);
-    light_adc = 400u;
-    play_music(4000);
-
-    size_t note_ons = 0u;
-    for (size_t i = 0; i < midi_log_len; ++i)
-        if (midi_log[i].kind == LOG_NOTE_ON) ++note_ons;
-    assert(note_ons == 3u);
-
-    settings.isMuteLightVelocity = true;
-    stop_light_midi();
-    size_t note_offs = 0u;
-    for (size_t i = 0; i < midi_log_len; ++i)
-        if (midi_log[i].kind == LOG_NOTE_OFF) ++note_offs;
-    assert(note_offs == note_ons);
-
-    const size_t events_after_mute = midi_log_len;
-    light_adc = 3000u;
-    play_music(4000);
-    for (size_t i = events_after_mute; i < midi_log_len; ++i)
-        assert(midi_log[i].kind != LOG_NOTE_ON);
-}
-
-static void test_debussy_uses_separate_plant_and_light_channels(void) {
-    reset_fixture();
-    debussy_control.mode = DEBUSSY_MODE_ENABLED;
-    debussy_runtime_reset();
-    play_music(4000);
-    light_adc = 400u;
-    play_music(4000);
-
-    unsigned int plant_notes = 0u;
-    unsigned int light_notes = 0u;
-    for (size_t i = 0; i < midi_log_len; ++i) {
-        if (midi_log[i].kind != LOG_NOTE_ON) continue;
-        if (midi_log[i].channel == settings.plant_channel) ++plant_notes;
-        if (midi_log[i].channel == settings.light_channel) ++light_notes;
-    }
-    assert(plant_notes == 1u);
-    assert(light_notes == 2u);
-}
-
-static void test_debussy_gesture_bypasses_sparse_texture(void) {
-    reset_fixture();
-    debussy_control.mode = DEBUSSY_MODE_ENABLED;
-    debussy_control.texture = 0u;
-    debussy_control.pedal_level = 32u;
-    debussy_control.colour_level = 48u;
-    debussy_runtime_reset();
-
-    play_music(4000);
-    light_adc = 400u;
-    for (unsigned int beat = 0u; beat < 7u; ++beat) play_music(4000);
-
-    unsigned int light_notes = 0u;
-    unsigned int plant_notes = 0u;
-    for (size_t i = 0; i < midi_log_len; ++i) {
-        if (midi_log[i].kind != LOG_NOTE_ON) continue;
-        if (midi_log[i].channel == settings.light_channel) ++light_notes;
-        if (midi_log[i].channel == settings.plant_channel) ++plant_notes;
-    }
-    assert(plant_notes == 1u); /* the user's gesture is never texture-gated */
-    assert(light_notes == 2u); /* one pedal + one colour after the gesture */
-}
-
 int main(void) {
     test_identity_round_trip();
     test_alarm_keeps_exact_note_identity();
@@ -471,13 +301,6 @@ int main(void) {
     test_light_requires_sensor_motion();
     test_plant_mute_keeps_visual_feedback();
     test_light_pitch_targets_the_plant_channel();
-    test_debussy_adapter_is_bounded_and_stops_cleanly();
-    test_debussy_gesture_phrase_returns_to_midi_silence();
-    test_debussy_mix_controls_reach_midi_adapter();
-    test_debussy_light_mute_survives_runtime_restart();
-    test_debussy_light_mute_stops_its_active_phrase();
-    test_debussy_uses_separate_plant_and_light_channels();
-    test_debussy_gesture_bypasses_sparse_texture();
     puts("note_lifecycle: identity, replacement, Clock, LED and failure passed");
     return 0;
 }

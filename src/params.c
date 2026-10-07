@@ -18,7 +18,6 @@
 #include "settings_storage.h"
 #include "persistence_scheduler.h"
 #include "settings_readback.h"
-#include "debussy_control.h"
 
 Settings_t settings;
 bool isMutedByButton = false;
@@ -612,43 +611,6 @@ void set_button_mode_state_cc(uint8_t channel, uint8_t value) {
         isMutedByButton = false;
     }
 }
-
-static void set_debussy_control_sys_ex(const uint8_t data[], uint8_t len) {
-    if (len != 2u) return;
-    const DebussyControl previous = debussy_control;
-    if (!debussy_control_set(&debussy_control, data[0], data[1])) return;
-    if (memcmp(&previous, &debussy_control, sizeof previous) != 0) {
-        stop_midi();
-        debussy_runtime_reset();
-    }
-}
-
-#define DEBUSSY_SETTER(name, command_id) \
-    static void name(const uint8_t data[], uint8_t len) { \
-        if (len != 1u) return; \
-        const uint8_t message[2] = {command_id, data[0]}; \
-        set_debussy_control_sys_ex(message, sizeof message); \
-    }
-
-DEBUSSY_SETTER(set_debussy_mode_sys_ex, DEBUSSY_COMMAND_MODE)
-DEBUSSY_SETTER(set_debussy_seed_sys_ex, DEBUSSY_COMMAND_SEED)
-DEBUSSY_SETTER(set_debussy_texture_sys_ex, DEBUSSY_COMMAND_TEXTURE)
-DEBUSSY_SETTER(set_debussy_register_sys_ex, DEBUSSY_COMMAND_REGISTER)
-DEBUSSY_SETTER(set_debussy_colour_sys_ex, DEBUSSY_COMMAND_COLOUR)
-DEBUSSY_SETTER(set_debussy_sensitivity_sys_ex, DEBUSSY_COMMAND_SENSITIVITY)
-DEBUSSY_SETTER(set_debussy_touch_sys_ex, DEBUSSY_COMMAND_TOUCH_THRESHOLD)
-DEBUSSY_SETTER(set_debussy_light_sys_ex, DEBUSSY_COMMAND_LIGHT_INFLUENCE)
-DEBUSSY_SETTER(set_debussy_pedal_sys_ex, DEBUSSY_COMMAND_PEDAL)
-DEBUSSY_SETTER(set_debussy_melody_sys_ex, DEBUSSY_COMMAND_MELODY)
-
-static void get_debussy_control_sys_ex(const uint8_t data[], uint8_t len) {
-    if (len != 1u) return;
-    uint8_t payload[DEBUSSY_CONTROL_PAYLOAD_BYTES];
-    const size_t payload_length = debussy_control_encode(
-            &debussy_control, data[0], payload, sizeof payload);
-    if (payload_length > 0u && payload_length <= UINT8_MAX)
-        print_sys_ex_reply(payload, (uint8_t)payload_length);
-}
 //endregion
 
 
@@ -714,26 +676,6 @@ void setup_commands() {
     add_CC(set_button_mode_state_cc, 87);
 
     add_sys_ex_com_len(set_channel_sys_ex, 127, 2);
-    /* Listening-gate controls are deliberately runtime-only. They return to
-     * Classic at reboot and never enter the shipping Settings_t flash ABI. */
-    add_sys_ex_query_len(set_debussy_mode_sys_ex, DEBUSSY_COMMAND_MODE, 1);
-    add_sys_ex_query_len(set_debussy_seed_sys_ex, DEBUSSY_COMMAND_SEED, 1);
-    add_sys_ex_query_len(set_debussy_texture_sys_ex,
-                         DEBUSSY_COMMAND_TEXTURE, 1);
-    add_sys_ex_query_len(set_debussy_register_sys_ex,
-                         DEBUSSY_COMMAND_REGISTER, 1);
-    add_sys_ex_query_len(set_debussy_colour_sys_ex,
-                         DEBUSSY_COMMAND_COLOUR, 1);
-    add_sys_ex_query_len(set_debussy_sensitivity_sys_ex,
-                         DEBUSSY_COMMAND_SENSITIVITY, 1);
-    add_sys_ex_query_len(set_debussy_touch_sys_ex,
-                         DEBUSSY_COMMAND_TOUCH_THRESHOLD, 1);
-    add_sys_ex_query_len(set_debussy_light_sys_ex,
-                         DEBUSSY_COMMAND_LIGHT_INFLUENCE, 1);
-    add_sys_ex_query_len(set_debussy_pedal_sys_ex,
-                         DEBUSSY_COMMAND_PEDAL, 1);
-    add_sys_ex_query_len(set_debussy_melody_sys_ex,
-                         DEBUSSY_COMMAND_MELODY, 1);
     // Runtime-only action. The non-persisting registration is intentional:
     // recalibration must never schedule a settings flash write.
     add_sys_ex_query_len(get_settings_sys_ex,
@@ -742,7 +684,6 @@ void setup_commands() {
                          BIOTRON_RECALIBRATE_COMMAND, 1);
     add_sys_ex_query_len(get_health_sys_ex, 124, 1);
     add_sys_ex_query_len(get_info_sys_ex, 126, 1);
-    add_sys_ex_query_len(get_debussy_control_sys_ex, DEBUSSY_QUERY_ID, 1);
 }
 
 

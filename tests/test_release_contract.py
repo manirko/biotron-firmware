@@ -38,8 +38,6 @@ def main() -> None:
     main_source = source("main.c")
     raw_plant = source("src/raw_plant.c")
     global_source = source("src/global.c")
-    debussy_source = source("src/debussy_mode.c")
-    debussy_header = source("include/debussy_mode.h")
     developer_guide = source("DEVELOPING.md")
     settings_guide = source("SettingsDescription.md")
     changelog = source("CHANGELOG.md")
@@ -177,20 +175,6 @@ def main() -> None:
     assert "play_music(" not in music_timer
     assert "print_" not in music_timer
 
-    # The first Debussy slice is a pure fixed-memory decision engine. It must
-    # stay independent from hardware, clocks, MIDI transport and allocation.
-    for forbidden_header in (
-        "hardware/", "pico/", "tusb.h", "PLSDK/", "midi_", "time.h",
-    ):
-        assert forbidden_header not in debussy_source
-        assert forbidden_header not in debussy_header
-    assert not re.search(
-        r"\b(?:malloc|calloc|realloc|free|rand|srand|time|print_pure|note_on|note_off)\s*\(",
-        debussy_source,
-    )
-    assert "DebussyDecision debussy_step" in debussy_source
-    assert "DebussyState *state" in debussy_header
-
     assert "#define USB_VID   0xCafe" in descriptors
     assert "#define USB_BCD   0x0200" in descriptors
     assert "#define MIDI_NUM_CABLES 2" in descriptors
@@ -228,7 +212,7 @@ def main() -> None:
     ):
         assert required in settings_guide, required
     assert re.findall(r"^run_pair ([a-z0-9-]+)", host_runner, re.M) == [
-        "debussy-mode", "debussy-control", "midi-parser", "commands", "midi-diagnostics", "midi-health",
+        "midi-parser", "commands", "midi-diagnostics", "midi-health",
         "settings-readback", "led-engine", "led-adapter", "runtime-safety", "usb-string",
         "settings-storage", "persistence-scheduler", "storage-v1",
         "music-v1", "note-lifecycle", "music-scheduler", "raw-plant",
@@ -237,6 +221,11 @@ def main() -> None:
     for required in ("cf264aa", "1765723554", "human MIDI channels 2/3"):
         assert required in changelog, required
 
+    # Removed experimental SysEx must not acquire another settings action.
+    registered_actions = {int(value) for value in re.findall(
+        r"add_sys_ex_com_len\([^,]+,\s*(\d+),", params)}
+    assert registered_actions.isdisjoint(range(28, 38))
+    assert not re.search(r"add_sys_ex_query_len\([^;]*,\s*122\s*,", params)
     print("release_contract: v1 registry, storage, USB and developer map passed")
 
 
