@@ -40,6 +40,10 @@
 
 ## Developer quick start
 
+The current cleanup branch targets **1.10.9 (internal candidate)**. See
+[`CLEAN-FIRMWARE.md`](CLEAN-FIRMWARE.md) for its exact scope and retained fixes.
+It removes the abandoned composition experiment from 1.10.8 beta21.
+
 Maintainers should start with [`DEVELOPING.md`](DEVELOPING.md). It explains the runtime ownership model,
 compatibility rules, commit stack, exact build identity, test map and the
 boundary between firmware, Windows/REAPER, offline Settings and Help.

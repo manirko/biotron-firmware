@@ -20,3 +20,19 @@ belong in ProjectData/playtronica-firmware, never in Git.
 
 This is not a customer release. Browser flashing, musical/LED assessment,
 power-cycle and other-platform acceptance remain separate release gates.
+
+## Bench evidence
+
+Source cleanup: 303aafc. UF2 SHA-256:
+`823d044374268462d39b13c0e65dc2676cda2fb3d5162edba78aedccb0a09f3d`.
+On user-confirmed Fibonacci/A08, verified native write and exact 1.10.9
+version/topology passed. Readback passed on both cables; settings vector and
+plant BPM match the initial 1.10.8 baseline. Read-only flash-save delta is zero.
+Thirty-second Paul/P07 mixed stress passed. Current localhost web loaded settings
+and confirmed `Saved on Biotron.` It still targets 1.9.8 for flashing; this is
+not a browser-update acceptance result for 1.10.9.
+
+The original exact 1.10.8 passed source host tests, mixed stress and a
+30-second capture (5 Note On / 5 Note Off, no active or orphan notes).
+Native 1.10.8 → 1.9.8 → exact 1.10.8 completed before clean-candidate testing.
+This later result does not erase the previous 1.9.8 orphan Note Off finding.
