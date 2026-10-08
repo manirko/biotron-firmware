@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stddef.h>
 #include <pico/stdlib.h>
 #include "params.h"
 #include "PLSDK/constants.h"
@@ -198,15 +199,92 @@ void save_settings() {
     persistence_note_saved(&settings_save_scheduler);
 }
 
-void read_settings() {
-    const uint8_t* flash_target_contents = (const uint8_t *) (XIP_BASE + FLASH_TARGET_OFFSET);
-    memcpy(&settings, flash_target_contents, sizeof(settings));
+#define LENGTH_POSSIBLE_NOTE_FRACTION 11
+static const int POSSIBLE_NOTE_FRACTION[LENGTH_POSSIBLE_NOTE_FRACTION] = {
+        64, 48, 32, 24, 16, 12, 8, 6, 4, 2, 1
+};
 
-    if (settings.id != ID_FLASH) {
+/* Never read a flash bool through its C type before validating its byte. */
+static bool stored_bool_bytes_valid(const uint8_t raw[sizeof(Settings_t)]) {
+    static const size_t offsets[] = {
+        offsetof(Settings_t, isRandomPlantVelocity),
+        offsetof(Settings_t, isMutePlantVelocity),
+        offsetof(Settings_t, isRandomLightVelocity),
+        offsetof(Settings_t, isMuteLightVelocity),
+        offsetof(Settings_t, random_note),
+        offsetof(Settings_t, light_pitch_mode),
+        offsetof(Settings_t, performance_mode),
+        offsetof(Settings_t, is_mute_button_active),
+    };
+    _Static_assert(sizeof(bool) == 1, "shipping settings bool ABI is one byte");
+    for (size_t i = 0; i < sizeof offsets / sizeof offsets[0]; ++i) {
+        if (raw[offsets[i]] > 1) return false;
+    }
+    return true;
+}
+
+static bool stored_percent_valid(double value) {
+    /* 1..100 retains the released legacy percent migration. */
+    return isfinite(value) && value >= 0.0 && value <= 100.0;
+}
+
+static bool stored_settings_valid(const Settings_t *value) {
+    const int midi_values[] = {
+        value->lightBPM, value->minPlantVelocity, value->maxPlantVelocity,
+        value->minLightVelocity, value->maxLightVelocity,
+        value->same_note_plant, value->same_note_light,
+        value->light_note_range, value->middle_plant_note,
+    };
+    for (size_t i = 0; i < sizeof midi_values / sizeof midi_values[0]; ++i) {
+        if (midi_values[i] < 0 || midi_values[i] > 127) return false;
+    }
+    bool fraction_valid = false;
+    for (size_t i = 0; i < LENGTH_POSSIBLE_NOTE_FRACTION; ++i) {
+        if (value->fraction_note_off == POSSIBLE_NOTE_FRACTION[i]) {
+            fraction_valid = true;
+            break;
+        }
+    }
+    /* Zero light BPM/range and reversed velocities remain valid: their
+     * released consumers define safe musical behaviour for those values. */
+    return fraction_valid && value->BPM > 0 && value->BPM <= BPM_TO_US(1) &&
+           value->scale >= 0 && value->scale < SCALES_COUNT &&
+           value->plant_channel >= 0 && value->plant_channel < 16 &&
+           value->light_channel >= 0 && value->light_channel < 16 &&
+           value->swing_first_note_percent >= 1 &&
+           value->swing_first_note_percent <= 100 &&
+           stored_percent_valid(value->fibPower) &&
+           stored_percent_valid(value->firstValue) &&
+           stored_percent_valid(value->filterPercent);
+}
+
+void read_settings() {
+    const uint8_t *flash_target_contents =
+            (const uint8_t *)(XIP_BASE + FLASH_TARGET_OFFSET);
+    uint8_t raw[sizeof(Settings_t)];
+    int stored_id;
+    memcpy(raw, flash_target_contents, sizeof raw);
+    memcpy(&stored_id, raw + offsetof(Settings_t, id), sizeof stored_id);
+    if (stored_id != ID_FLASH) {
         default_settings();
         save_settings();
         return;
     }
+    Settings_t loaded;
+    bool valid = stored_bool_bytes_valid(raw);
+    if (valid) {
+        memcpy(&loaded, raw, sizeof loaded);
+        valid = stored_settings_valid(&loaded);
+    }
+    if (!valid) {
+        /* Compatible but corrupt: safe RAM preset, no automatic flash erase.
+         * A later explicit persistent action/BOOT may save that safe preset. */
+        default_settings();
+        persisted_settings_snapshot_valid = false;
+        persistence_note_saved(&settings_save_scheduler);
+        return;
+    }
+    memcpy(&settings, &loaded, sizeof settings);
     const Settings_t stored_settings = settings;
     settings.fibPower = biotron_normalize_percent_setting(
             settings.fibPower, DEF_FIB_POW);
@@ -479,11 +557,6 @@ void set_same_note_cc(uint8_t channel, uint8_t value) {
     }
 
 }
-
-#define LENGTH_POSSIBLE_NOTE_FRACTION 11
-static const int POSSIBLE_NOTE_FRACTION[LENGTH_POSSIBLE_NOTE_FRACTION] = {
-        64, 48, 32, 24, 16, 12, 8, 6, 4, 2, 1
-};
 
 void set_note_off_percent_sys_ex(const uint8_t data[], uint8_t len) {
     for (int i = 0; i < LENGTH_POSSIBLE_NOTE_FRACTION; i++) {

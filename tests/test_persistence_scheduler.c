@@ -209,6 +209,65 @@ int main(void) {
     const uint32_t migrated_saves = program_calls;
     read_settings();
     assert(program_calls == migrated_saves);
+    /* F05: valid golden presets preserve every byte and do not write back. */
+    for (size_t preset = 0; preset < COUNT_OF_PRESETS; ++preset) {
+        memcpy(flash_memory, order_of_presets[preset], sizeof settings);
+        const uint32_t saves = program_calls;
+        read_settings();
+        assert(memcmp(&settings, order_of_presets[preset], sizeof settings) == 0);
+        assert(program_calls == saves && persisted_settings_snapshot_valid);
+    }
+    const size_t bool_offsets[] = {
+        offsetof(Settings_t,isRandomPlantVelocity), offsetof(Settings_t,isMutePlantVelocity),
+        offsetof(Settings_t,isRandomLightVelocity), offsetof(Settings_t,isMuteLightVelocity),
+        offsetof(Settings_t,random_note), offsetof(Settings_t,light_pitch_mode),
+        offsetof(Settings_t,performance_mode), offsetof(Settings_t,is_mute_button_active)
+    };
+    for (size_t i = 0; i < sizeof bool_offsets / sizeof bool_offsets[0]; ++i) {
+        for (unsigned byte = 2; byte <= 255; ++byte) {
+            memcpy(flash_memory, &mixolyd, sizeof settings);
+            flash_memory[bool_offsets[i]] = (uint8_t)byte;
+            const uint32_t saves = program_calls;
+            read_settings();
+            assert(settings_equal(&settings, &mixolyd));
+            assert(!persisted_settings_snapshot_valid && !settings_save_scheduler.pending);
+            assert(program_calls == saves);
+        }
+    }
+    const size_t integer_offsets[] = {
+        offsetof(Settings_t,BPM), offsetof(Settings_t,lightBPM), offsetof(Settings_t,scale),
+        offsetof(Settings_t,minPlantVelocity), offsetof(Settings_t,maxPlantVelocity),
+        offsetof(Settings_t,minLightVelocity), offsetof(Settings_t,maxLightVelocity),
+        offsetof(Settings_t,same_note_plant), offsetof(Settings_t,same_note_light),
+        offsetof(Settings_t,fraction_note_off), offsetof(Settings_t,light_note_range),
+        offsetof(Settings_t,middle_plant_note), offsetof(Settings_t,plant_channel),
+        offsetof(Settings_t,light_channel), offsetof(Settings_t,swing_first_note_percent)
+    };
+    const int invalid_ints[] = {INT_MIN,-1,INT_MAX};
+    for (size_t i = 0; i < sizeof integer_offsets / sizeof integer_offsets[0]; ++i) {
+        for (size_t v = 0; v < sizeof invalid_ints / sizeof invalid_ints[0]; ++v) {
+            memcpy(flash_memory, &mixolyd, sizeof settings);
+            memcpy(flash_memory + integer_offsets[i], &invalid_ints[v], sizeof(int));
+            const uint32_t saves = program_calls;
+            read_settings();
+            assert(settings_equal(&settings, &mixolyd) && !persisted_settings_snapshot_valid);
+            assert(program_calls == saves);
+        }
+    }
+    const size_t percent_offsets[] = {offsetof(Settings_t,fibPower),
+        offsetof(Settings_t,firstValue),offsetof(Settings_t,filterPercent)};
+    const double invalid_doubles[] = {NAN,INFINITY,-INFINITY,-0.1,100.1};
+    for (size_t i = 0; i < 3; ++i) {
+        for (size_t v = 0; v < sizeof invalid_doubles / sizeof invalid_doubles[0]; ++v) {
+            memcpy(flash_memory, &mixolyd, sizeof settings);
+            memcpy(flash_memory + percent_offsets[i], &invalid_doubles[v], sizeof(double));
+            const uint32_t saves = program_calls;
+            read_settings();
+            assert(settings_equal(&settings, &mixolyd) && !persisted_settings_snapshot_valid);
+            assert(program_calls == saves);
+        }
+    }
+    puts("load_production: golden ABI, raw bool bytes, integer/percent domains and RAM fallback passed");
     puts("percent_production: SysEx0-100, CC0-127, invalid input and legacy migration passed");
     puts("persistence_production: real changes, dirty no-ops, padding and invalid input passed");
     return 0;
