@@ -13,6 +13,8 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 #include "pico/bootrom.h"
+extern uint8_t length_sys;
+extern sys_ex_command_s sys_com[MAX_COUNT_COMMANDS];
 bool LOGGER_FLAG = false;
 enum Status status = Active;
 enum Status active_status = Active;
@@ -21,7 +23,7 @@ static uint32_t erase_calls, program_calls, boot_calls;
 static uint8_t flash_memory[FLASH_SECTOR_SIZE];
 #undef XIP_BASE
 #define XIP_BASE ((uintptr_t)flash_memory - FLASH_TARGET_OFFSET)
-static uint8_t queue[128][4];
+static uint8_t queue[4096][4];
 static size_t queue_read, queue_write;
 uint64_t time_us_64(void) { return now_us; }
 uint32_t time_us_32(void) { return (uint32_t)now_us; }
@@ -40,6 +42,20 @@ void reset_usb_boot(uint32_t mask,uint32_t interfaces) {
 }
 void reset_bpm(void) { }
 void load_settings(void) { }
+static size_t calibration_calls, telemetry_calls, reference_calls, reference_reset_calls;
+void stop_plant_midi(void) { }
+void stop_light_midi(void) { }
+void change_pitch(uint8_t channel, uint8_t lsb, uint8_t msb) {
+    (void)channel; (void)lsb; (void)msb;
+}
+void refresh_music_alarm_timing(void) { }
+void start_plant_calibration(uint8_t nonce) { (void)nonce; ++calibration_calls; }
+void report_calibration_telemetry(uint8_t nonce) { (void)nonce; ++telemetry_calls; }
+bool set_manual_calibration_reference(uint32_t baseline, uint32_t noise) {
+    (void)baseline; (void)noise; ++reference_calls; return true;
+}
+bool reset_calibration_reference(void) { ++reference_reset_calls; return true; }
+
 void bpm_clock_control(bool enabled) { (void)enabled; }
 void play_music_bpm_clock(void) { }
 void remind_midi(void) { }
@@ -54,7 +70,7 @@ uint32_t tud_midi_stream_write(uint8_t cable,const uint8_t *data,uint32_t length
 }
 #include "../src/params.c"
 static void enqueue(uint8_t header,uint8_t a,uint8_t b,uint8_t c) {
-    assert(queue_write<128);
+    assert(queue_write<4096);
     uint8_t packet[4]={header,a,b,c}; memcpy(queue[queue_write++],packet,4);
 }
 static void send_filter_cc(uint8_t value) {
@@ -109,8 +125,7 @@ int main(void) {
     settings = mixolyd;
     save_settings();
     const uint32_t initial_saves = program_calls;
-    add_CC(set_filter_cc, 3);
-    add_sys_ex_com_range(set_fib_power_sys_ex, 1, 1, 1);
+    setup_commands();
     /* F04: repeated dirty no-ops never postpone the original deadline. */
     send_filter_cc(64);
     assert(settings_save_scheduler.last_change_us == 0);
@@ -209,6 +224,49 @@ int main(void) {
     const uint32_t migrated_saves = program_calls;
     read_settings();
     assert(program_calls == migrated_saves);
+    /* F02: each production schema rejects extra payload before side effects. */
+    for (size_t command = 0; command < length_sys; ++command) {
+        const sys_ex_command_s *entry = &sys_com[command];
+        if (entry->maximum_length == UINT8_MAX) continue;
+        uint8_t message[10] = {0xf0,0x14,0x0d,entry->num};
+        const size_t payload = entry->maximum_length + 1u;
+        assert(payload + 5u <= sizeof message);
+        message[payload + 4u] = 0xf7;
+        Settings_t before = settings;
+        enqueue_sysex(message, payload + 5u);
+        get_sys_ex_and_behave();
+        assert(settings_equal(&before, &settings));
+        assert(!settings_save_scheduler.pending);
+    }
+    /* The existing additive BPM encoder needs more than one payload byte. */
+    const uint8_t bpm[] = {0xf0,0x14,0x0d,0,127,127,127,23,0xf7};
+    enqueue_sysex(bpm, sizeof bpm); get_sys_ex_and_behave();
+    assert(settings.BPM == BPM_TO_US(404));
+    save_pending_settings_now();
+    const uint8_t calibration[][15] = {
+        {0xf0,0x14,0x0d,125,77,0xf7},
+        {0xf0,0x14,0x0d,125,77,5,0xf7},
+        {0xf0,0x14,0x0d,125,77,6,1,0,0,0,1,0,0,0,0xf7},
+        {0xf0,0x14,0x0d,125,77,7,0xf7},
+        {0xf0,0x14,0x0d,125,77,6,1,0xf7}
+    };
+    const size_t calibration_lengths[] = {6,7,15,7,8};
+    const uint32_t saves_before_queries = program_calls;
+    for (size_t i = 0; i < 5; ++i) {
+        enqueue_sysex(calibration[i], calibration_lengths[i]); get_sys_ex_and_behave();
+    }
+    assert(calibration_calls == 1 && telemetry_calls == 3);
+    assert(reference_calls == 1 && reference_reset_calls == 1);
+    assert(program_calls == saves_before_queries && !settings_save_scheduler.pending);
+    const uint8_t extra_boot[] = {0xf0,0x0b,0x14,0x0d,127,1,0xf7};
+    enqueue_sysex(extra_boot,sizeof extra_boot);get_sys_ex_and_behave();
+    assert(boot_calls == 0);
+    const uint8_t legacy_boot[] = {0xf0,0x0b,127,0xf7};
+    const uint8_t boot[] = {0xf0,0x0b,0x14,0x0d,127,0xf7};
+    enqueue_sysex(legacy_boot,sizeof legacy_boot);get_sys_ex_and_behave();
+    assert(boot_calls == 0);
+    enqueue_sysex(boot,sizeof boot);get_sys_ex_and_behave();
+    assert(boot_calls == 1 && program_calls == saves_before_queries);
     /* F05: valid golden presets preserve every byte and do not write back. */
     for (size_t preset = 0; preset < COUNT_OF_PRESETS; ++preset) {
         memcpy(flash_memory, order_of_presets[preset], sizeof settings);

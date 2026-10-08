@@ -90,7 +90,8 @@ run_pair persistence-scheduler \
   -DFLASH_ID_STARTUP=1765723554 \
   -I tests/stubs -I include -I PLSDK/include \
   PLSDK/src/midi_parser.c PLSDK/src/midi_diagnostics.c \
-  PLSDK/src/midi_tx.c PLSDK/src/commands.c tests/test_persistence_scheduler.c
+  PLSDK/src/midi_tx.c PLSDK/src/commands.c PLSDK/src/midi_health.c \
+  src/settings_readback.c tests/test_persistence_scheduler.c
 
 run_pair storage-v1 \
   -Wno-strict-prototypes -I tests/stubs -I include -I PLSDK/include \
