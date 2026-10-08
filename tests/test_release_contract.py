@@ -46,14 +46,16 @@ def main() -> None:
     assert decimal_arguments(params, "add_CC") == [
         14, 22, 23, 3, 24, 9, 25, 26, 31, 15, 20, 21, 28, 27, 30, 85, 86, 87,
     ]
-    assert length_registrations(params, "add_sys_ex_com_len") == [
-        (0, 1), (9, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1),
-        (6, 1), (15, 1), (17, 1), (16, 1), (18, 1), (22, 1), (23, 1),
-        (7, 0), (10, 1), (11, 1), (24, 1), (12, 1), (13, 1), (19, 1),
-        (21, 1), (25, 1), (26, 1), (27, 1), (127, 2),
+    assert length_registrations(params, "add_sys_ex_com_len") == [(0, 1)]
+    # F02 schemas: scalar settings are exact; BPM keeps its additive encoding.
+    ranges = re.findall(r"add_sys_ex_com_range\([^,]+,\s*(\d+),\s*(\d+),\s*(\d+)\);", params)
+    assert [(int(n), int(lo), int(hi)) for n, lo, hi in ranges] == [
+        (9, 1, 1), (1, 1, 1), (2, 1, 1), (3, 1, 1), (4, 1, 1),
+        (5, 1, 1), (6, 1, 1), (15, 1, 1), (17, 1, 1), (16, 1, 1),
+        (18, 1, 1), (22, 1, 1), (23, 1, 1), (7, 0, 0), (10, 1, 1),
+        (11, 1, 1), (24, 1, 1), (12, 1, 1), (13, 1, 1), (19, 1, 1),
+        (21, 1, 1), (25, 1, 1), (26, 1, 1), (27, 1, 1), (127, 2, 2),
     ]
-    query_registrations = length_registrations(params, "add_sys_ex_query_len")
-    assert query_registrations == [(124, 1), (126, 1)]
     assert "BIOTRON_SETTINGS_QUERY_ID 123u" in source("include/settings_readback.h")
     assert "BIOTRON_RECALIBRATE_COMMAND 125" in params_h
     assert "BIOTRON_RECALIBRATE_WAITING 1" in params_h
@@ -61,8 +63,8 @@ def main() -> None:
     assert "BIOTRON_RECALIBRATE_READY 3" in params_h
     assert "BIOTRON_RECALIBRATE_METRICS 4" in params_h
     assert "add_sys_ex_query_len(start_plant_calibration_sys_ex" in params
-    assert "add_sys_ex_query_len(get_settings_sys_ex" in params
-    assert "add_sys_ex_query_len(get_health_sys_ex, 124, 1);" in params
+    assert "add_sys_ex_query_range(get_settings_sys_ex" in params
+    assert "add_sys_ex_query_range(get_health_sys_ex, 124, 1, 1);" in params
 
     # The four adjacent read-only/runtime protocol commands must remain
     # distinct. This is the regression that prevents the former 123 collision.

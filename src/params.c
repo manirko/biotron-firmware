@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stddef.h>
 #include <pico/stdlib.h>
 #include "params.h"
 #include "PLSDK/constants.h"
@@ -198,15 +199,92 @@ void save_settings() {
     persistence_note_saved(&settings_save_scheduler);
 }
 
-void read_settings() {
-    const uint8_t* flash_target_contents = (const uint8_t *) (XIP_BASE + FLASH_TARGET_OFFSET);
-    memcpy(&settings, flash_target_contents, sizeof(settings));
+#define LENGTH_POSSIBLE_NOTE_FRACTION 11
+static const int POSSIBLE_NOTE_FRACTION[LENGTH_POSSIBLE_NOTE_FRACTION] = {
+        64, 48, 32, 24, 16, 12, 8, 6, 4, 2, 1
+};
 
-    if (settings.id != ID_FLASH) {
+/* Never read a flash bool through its C type before validating its byte. */
+static bool stored_bool_bytes_valid(const uint8_t raw[sizeof(Settings_t)]) {
+    static const size_t offsets[] = {
+        offsetof(Settings_t, isRandomPlantVelocity),
+        offsetof(Settings_t, isMutePlantVelocity),
+        offsetof(Settings_t, isRandomLightVelocity),
+        offsetof(Settings_t, isMuteLightVelocity),
+        offsetof(Settings_t, random_note),
+        offsetof(Settings_t, light_pitch_mode),
+        offsetof(Settings_t, performance_mode),
+        offsetof(Settings_t, is_mute_button_active),
+    };
+    _Static_assert(sizeof(bool) == 1, "shipping settings bool ABI is one byte");
+    for (size_t i = 0; i < sizeof offsets / sizeof offsets[0]; ++i) {
+        if (raw[offsets[i]] > 1) return false;
+    }
+    return true;
+}
+
+static bool stored_percent_valid(double value) {
+    /* 1..100 retains the released legacy percent migration. */
+    return isfinite(value) && value >= 0.0 && value <= 100.0;
+}
+
+static bool stored_settings_valid(const Settings_t *value) {
+    const int midi_values[] = {
+        value->lightBPM, value->minPlantVelocity, value->maxPlantVelocity,
+        value->minLightVelocity, value->maxLightVelocity,
+        value->same_note_plant, value->same_note_light,
+        value->light_note_range, value->middle_plant_note,
+    };
+    for (size_t i = 0; i < sizeof midi_values / sizeof midi_values[0]; ++i) {
+        if (midi_values[i] < 0 || midi_values[i] > 127) return false;
+    }
+    bool fraction_valid = false;
+    for (size_t i = 0; i < LENGTH_POSSIBLE_NOTE_FRACTION; ++i) {
+        if (value->fraction_note_off == POSSIBLE_NOTE_FRACTION[i]) {
+            fraction_valid = true;
+            break;
+        }
+    }
+    /* Zero light BPM/range and reversed velocities remain valid: their
+     * released consumers define safe musical behaviour for those values. */
+    return fraction_valid && value->BPM > 0 && value->BPM <= BPM_TO_US(1) &&
+           value->scale >= 0 && value->scale < SCALES_COUNT &&
+           value->plant_channel >= 0 && value->plant_channel < 16 &&
+           value->light_channel >= 0 && value->light_channel < 16 &&
+           value->swing_first_note_percent >= 1 &&
+           value->swing_first_note_percent <= 100 &&
+           stored_percent_valid(value->fibPower) &&
+           stored_percent_valid(value->firstValue) &&
+           stored_percent_valid(value->filterPercent);
+}
+
+void read_settings() {
+    const uint8_t *flash_target_contents =
+            (const uint8_t *)(XIP_BASE + FLASH_TARGET_OFFSET);
+    uint8_t raw[sizeof(Settings_t)];
+    int stored_id;
+    memcpy(raw, flash_target_contents, sizeof raw);
+    memcpy(&stored_id, raw + offsetof(Settings_t, id), sizeof stored_id);
+    if (stored_id != ID_FLASH) {
         default_settings();
         save_settings();
         return;
     }
+    Settings_t loaded;
+    bool valid = stored_bool_bytes_valid(raw);
+    if (valid) {
+        memcpy(&loaded, raw, sizeof loaded);
+        valid = stored_settings_valid(&loaded);
+    }
+    if (!valid) {
+        /* Compatible but corrupt: safe RAM preset, no automatic flash erase.
+         * A later explicit persistent action/BOOT may save that safe preset. */
+        default_settings();
+        persisted_settings_snapshot_valid = false;
+        persistence_note_saved(&settings_save_scheduler);
+        return;
+    }
+    memcpy(&settings, &loaded, sizeof settings);
     const Settings_t stored_settings = settings;
     settings.fibPower = biotron_normalize_percent_setting(
             settings.fibPower, DEF_FIB_POW);
@@ -223,9 +301,40 @@ void read_settings() {
     persistence_note_saved(&settings_save_scheduler);
 }
 
+/* Compare values, not padding: Settings_t is a shipping flash ABI. */
+static bool settings_equal(const Settings_t *left, const Settings_t *right) {
+    return left->id == right->id &&
+           left->BPM == right->BPM &&
+           left->lightBPM == right->lightBPM &&
+           left->fibPower == right->fibPower &&
+           left->firstValue == right->firstValue &&
+           left->filterPercent == right->filterPercent &&
+           left->scale == right->scale &&
+           left->isRandomPlantVelocity == right->isRandomPlantVelocity &&
+           left->isMutePlantVelocity == right->isMutePlantVelocity &&
+           left->minPlantVelocity == right->minPlantVelocity &&
+           left->maxPlantVelocity == right->maxPlantVelocity &&
+           left->isRandomLightVelocity == right->isRandomLightVelocity &&
+           left->isMuteLightVelocity == right->isMuteLightVelocity &&
+           left->minLightVelocity == right->minLightVelocity &&
+           left->maxLightVelocity == right->maxLightVelocity &&
+           left->random_note == right->random_note &&
+           left->same_note_plant == right->same_note_plant &&
+           left->same_note_light == right->same_note_light &&
+           left->fraction_note_off == right->fraction_note_off &&
+           left->light_note_range == right->light_note_range &&
+           left->light_pitch_mode == right->light_pitch_mode &&
+           left->performance_mode == right->performance_mode &&
+           left->middle_plant_note == right->middle_plant_note &&
+           left->plant_channel == right->plant_channel &&
+           left->light_channel == right->light_channel &&
+           left->swing_first_note_percent == right->swing_first_note_percent &&
+           left->is_mute_button_active == right->is_mute_button_active;
+}
+
 static bool settings_differ_from_persisted(void) {
     return !persisted_settings_snapshot_valid ||
-           memcmp(&settings, &persisted_settings_snapshot, sizeof(settings)) != 0;
+           !settings_equal(&settings, &persisted_settings_snapshot);
 }
 
 static void schedule_settings_save(void) {
@@ -289,18 +398,22 @@ void change_bpm_cc(uint8_t channel, uint8_t value) {
 }
 
 void set_fib_power_sys_ex(const uint8_t data[], uint8_t len) {
+    if (len != 1 || data[0] > 100) return;
     settings.fibPower = (double )data[0] / 100;
 }
 
 void set_fib_power_cc(uint8_t channel, uint8_t value) {
+    if (value > 127) return;
     settings.fibPower = (double )value / 127;
 }
 
 void set_fib_first_sys_ex(const uint8_t data[], uint8_t len) {
+    if (len != 1 || data[0] > 100) return;
     settings.firstValue = (double )data[0] / 100;
 }
 
 void set_fib_first_cc(uint8_t channel, uint8_t value) {
+    if (value > 127) return;
     settings.firstValue = (double )value / 127;
 }
 
@@ -444,11 +557,6 @@ void set_same_note_cc(uint8_t channel, uint8_t value) {
     }
 
 }
-
-#define LENGTH_POSSIBLE_NOTE_FRACTION 11
-static const int POSSIBLE_NOTE_FRACTION[LENGTH_POSSIBLE_NOTE_FRACTION] = {
-        64, 48, 32, 24, 16, 12, 8, 6, 4, 2, 1
-};
 
 void set_note_off_percent_sys_ex(const uint8_t data[], uint8_t len) {
     for (int i = 0; i < LENGTH_POSSIBLE_NOTE_FRACTION; i++) {
@@ -616,80 +724,82 @@ void set_button_mode_state_cc(uint8_t channel, uint8_t value) {
 
 void setup_commands() {
     add_sys_ex_com_len(change_plant_bpm_sys_ex, 0, 1);
-    add_sys_ex_com_len(change_light_bpm_sys_ex, 9, 1);
+    add_sys_ex_com_range(change_light_bpm_sys_ex, 9, 1, 1);
     add_CC(change_bpm_cc, 14);
 
-    add_sys_ex_com_len(set_fib_power_sys_ex, 1, 1);
+    add_sys_ex_com_range(set_fib_power_sys_ex, 1, 1, 1);
     add_CC(set_fib_power_cc, 22);
 
-    add_sys_ex_com_len(set_fib_first_sys_ex, 2, 1);
+    add_sys_ex_com_range(set_fib_first_sys_ex, 2, 1, 1);
     add_CC(set_fib_first_cc, 23);
 
-    add_sys_ex_com_len(set_filter_sys_ex, 3, 1);
+    add_sys_ex_com_range(set_filter_sys_ex, 3, 1, 1);
     add_CC(set_filter_cc, 3);
 
-    add_sys_ex_com_len(set_scale_sys_ex, 4, 1);
+    add_sys_ex_com_range(set_scale_sys_ex, 4, 1, 1);
     add_CC(set_scale_cc, 24);
 
-    add_sys_ex_com_len(set_max_plant_vel_sys_ex, 5, 1);
-    add_sys_ex_com_len(set_max_light_vel_sys_ex, 6, 1);
-    add_sys_ex_com_len(set_min_plant_vel_sys_ex, 15, 1);
-    add_sys_ex_com_len(set_min_light_vel_sys_ex, 17, 1);
-    add_sys_ex_com_len(set_random_plant_vel_sys_ex, 16, 1);
-    add_sys_ex_com_len(set_random_light_vel_sys_ex, 18, 1);
-    add_sys_ex_com_len(set_mute_plant_vel_sys_ex, 22, 1);
-    add_sys_ex_com_len(set_mute_light_vel_sys_ex, 23, 1);
+    add_sys_ex_com_range(set_max_plant_vel_sys_ex, 5, 1, 1);
+    add_sys_ex_com_range(set_max_light_vel_sys_ex, 6, 1, 1);
+    add_sys_ex_com_range(set_min_plant_vel_sys_ex, 15, 1, 1);
+    add_sys_ex_com_range(set_min_light_vel_sys_ex, 17, 1, 1);
+    add_sys_ex_com_range(set_random_plant_vel_sys_ex, 16, 1, 1);
+    add_sys_ex_com_range(set_random_light_vel_sys_ex, 18, 1, 1);
+    add_sys_ex_com_range(set_mute_plant_vel_sys_ex, 22, 1, 1);
+    add_sys_ex_com_range(set_mute_light_vel_sys_ex, 23, 1, 1);
 
     add_CC(set_max_vel_cc, 9);
     add_CC(set_min_vel_cc, 25);
     add_CC(set_random_vel_cc, 26);
     add_CC(set_mute_cc, 31);
 
-    add_sys_ex_com_len(set_default_sys_ex, 7, 0);
+    add_sys_ex_com_range(set_default_sys_ex, 7, 0, 0);
 
-    add_sys_ex_com_len(set_random_note_sys_ex, 10, 1);
+    add_sys_ex_com_range(set_random_note_sys_ex, 10, 1, 1);
     add_CC(set_random_note_cc, 15);
 
-    add_sys_ex_com_len(set_same_note_plant_sys_ex, 11, 1);
-    add_sys_ex_com_len(set_same_note_light_sys_ex, 24, 1);
+    add_sys_ex_com_range(set_same_note_plant_sys_ex, 11, 1, 1);
+    add_sys_ex_com_range(set_same_note_light_sys_ex, 24, 1, 1);
     add_CC(set_same_note_cc, 20);
 
-    add_sys_ex_com_len(set_note_off_percent_sys_ex, 12, 1);
+    add_sys_ex_com_range(set_note_off_percent_sys_ex, 12, 1, 1);
     add_CC(set_note_off_percent_cc, 21);
 
-    add_sys_ex_com_len(set_light_range_sys_ex, 13, 1);
+    add_sys_ex_com_range(set_light_range_sys_ex, 13, 1, 1);
     add_CC(set_light_range_cc, 28);
 
-    add_sys_ex_com_len(set_light_pitch_mode_sys_ex, 19, 1);
+    add_sys_ex_com_range(set_light_pitch_mode_sys_ex, 19, 1, 1);
     add_CC(set_light_pitch_mode_cc, 27);
 
-    add_sys_ex_com_len(set_stuck_mode_sys_ex, 21, 1);
+    add_sys_ex_com_range(set_stuck_mode_sys_ex, 21, 1, 1);
     add_CC(set_stuck_mode_cc, 30);
 
-    add_sys_ex_com_len(set_middle_plant_note_sys_ex, 25, 1);
+    add_sys_ex_com_range(set_middle_plant_note_sys_ex, 25, 1, 1);
     add_CC(set_middle_plant_note_cc, 85);
 
-    add_sys_ex_com_len(set_swing_first_note_percent_sys_ex, 26, 1);
+    add_sys_ex_com_range(set_swing_first_note_percent_sys_ex, 26, 1, 1);
     add_CC(set_swing_first_note_percent_cc, 86);
 
-    add_sys_ex_com_len(set_button_mode_state_sys_ex, 27, 1);
+    add_sys_ex_com_range(set_button_mode_state_sys_ex, 27, 1, 1);
     add_CC(set_button_mode_state_cc, 87);
 
-    add_sys_ex_com_len(set_channel_sys_ex, 127, 2);
+    add_sys_ex_com_range(set_channel_sys_ex, 127, 2, 2);
     // Runtime-only action. The non-persisting registration is intentional:
     // recalibration must never schedule a settings flash write.
-    add_sys_ex_query_len(get_settings_sys_ex,
-                         BIOTRON_SETTINGS_QUERY_ID, 2);
+    add_sys_ex_query_range(get_settings_sys_ex,
+                         BIOTRON_SETTINGS_QUERY_ID, 2, 2);
     add_sys_ex_query_len(start_plant_calibration_sys_ex,
                          BIOTRON_RECALIBRATE_COMMAND, 1);
-    add_sys_ex_query_len(get_health_sys_ex, 124, 1);
-    add_sys_ex_query_len(get_info_sys_ex, 126, 1);
+    add_sys_ex_query_range(get_health_sys_ex, 124, 1, 1);
+    add_sys_ex_query_range(get_info_sys_ex, 126, 1, 1);
 }
 
 
 void get_sys_ex_and_behave() {
     midi_diagnostics_service(time_us_64(), tud_midi_available());
     for (uint8_t packet = 0; packet < 32; ++packet) {
+        Settings_t before;
+        memcpy(&before, &settings, sizeof before);
         const int sys_ex_status = read_sys_ex();
         if (sys_ex_status == UNKNOWN) return;
 
@@ -715,7 +825,7 @@ void get_sys_ex_and_behave() {
                 break;
             case CUSTOM_COMMAND:
             case CUSTOM_CC_COMMAND:
-                schedule_settings_save();
+                if (!settings_equal(&before, &settings)) schedule_settings_save();
                 break;
             case CUSTOM_QUERY_COMMAND:
             case MIDI_PACKET_IGNORED:
