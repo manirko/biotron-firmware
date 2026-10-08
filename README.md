@@ -40,9 +40,11 @@
 
 ## Developer quick start
 
-The current cleanup branch targets **1.10.9 (internal candidate)**. See
-[`CLEAN-FIRMWARE.md`](CLEAN-FIRMWARE.md) for its exact scope and retained fixes.
-It removes the abandoned composition experiment from 1.10.8 beta21.
+The current stability candidate is **1.10.10 (internal test only)**, frozen at
+[`2ae1973`](https://github.com/manirko/biotron-firmware/tree/2ae1973281f6b630abcda7ee3388197673090a41).
+It retains the cleanup described in [`CLEAN-FIRMWARE.md`](CLEAN-FIRMWARE.md), a
+dated 1.10.9 record, and adds bounded MIDI validation, release-queue ordering,
+real-change persistence scheduling and settings-domain validation.
 
 Maintainers should start with [`DEVELOPING.md`](DEVELOPING.md). It explains the runtime ownership model,
 compatibility rules, commit stack, exact build identity, test map and the
@@ -58,12 +60,23 @@ clean candidate; see `CLEAN-FIRMWARE.md` for the exact scope.
 
 `cf264aa` is the historical `1.8.3` compatibility candidate; `7471707` is
 historical `1.9.8 beta-08`. This cleanup branch's exact runtime source is
-`303aafc`, version `1.10.9`, still an internal candidate. Documentation HEAD is
-not a new firmware version. A customer release/version requires separate
+`303aafc`, version `1.10.9`, is the preceding cleanup candidate. The delivered
+1.10.10 UF2 has SHA-256
+`598d5a084f1eb3274e7c62b7bbeec1701f49d28edad87662e19c084dfc75477d`.
+It was built from `2ae1973` for `pico`, SDK
+`98a542c1a62fb549ffb5d66a3e5892b06276b670`, settings ID `1765723554`,
+with `BIOTRON_LED_MUSIC_PULSE=ON` and Arm GNU 13.2.Rel1 on macOS.
+Documentation and CI-only commits do not change that frozen runtime or file.
+A customer release/version requires separate
 acceptance; no future `2.0.0` release is authorized by this README.
-CI runs the host suite on every push and pull request
-(`.github/workflows/pull_request_ci.yml`). Passing host tests does not by
-itself authorize a merge or release.
+CI runs the host suite and a Pico build on every push and pull request
+(`.github/workflows/pull_request_ci.yml`). It checks actual compiler definitions
+for the version, settings ID and LED flag, and archives its CMake cache,
+compiler commands and toolchain identity. Ubuntu CI builds are separate test
+artifacts; they do not replace the delivered UF2. The earlier successful
+`2ae1973` CI run used version 1.9.8 with the LED flag OFF and does not validate
+the delivered 1.10.10 build configuration. Passing CI does not authorize a
+merge or release.
 
 
 
