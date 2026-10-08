@@ -49,6 +49,7 @@ typedef struct sys_ex_command_s {
     uint8_t num;
     bool persists;
     uint8_t minimum_length;
+    uint8_t maximum_length;
 } sys_ex_command_s;
 
 
@@ -84,6 +85,12 @@ void add_sys_ex_com_len(void action(const uint8_t data[], uint8_t len),
                         uint8_t num, uint8_t minimum_length);
 void add_sys_ex_query_len(void action(const uint8_t data[], uint8_t len),
                           uint8_t num, uint8_t minimum_length);
+
+/* Explicit schema bounds; legacy minimum-length APIs remain compatible. */
+void add_sys_ex_com_range(void action(const uint8_t data[], uint8_t len),
+                          uint8_t num, uint8_t minimum, uint8_t maximum);
+void add_sys_ex_query_range(void action(const uint8_t data[], uint8_t len),
+                            uint8_t num, uint8_t minimum, uint8_t maximum);
 
 /**
  * @brief Print info in MIDI + Playtronica format

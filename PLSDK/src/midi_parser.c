@@ -37,6 +37,23 @@ midi_event_kind_t midi_parser_feed_usb_packet(midi_parser_t *parser,
         return malformed(parser, event, MIDI_PARSER_ERROR_MALFORMED);
     }
 
+    /* Check only active payload bytes; USB padding is not MIDI data. */
+    if (cin >= 0x8 && cin <= 0xe) {
+        if ((packet[1] >> 4) != cin) {
+            return malformed(parser, event, MIDI_PARSER_ERROR_MALFORMED);
+        }
+    } else if ((cin == 0x2 && packet[1] != 0xf1 && packet[1] != 0xf3) ||
+               (cin == 0x3 && packet[1] != 0xf2)) {
+        return malformed(parser, event, MIDI_PARSER_ERROR_MALFORMED);
+    }
+    if (cin == 0x2 || cin == 0x3 || (cin >= 0x8 && cin <= 0xe)) {
+        for (uint8_t i = 2; i <= payload_len; ++i) {
+            if (packet[i] >= 0x80) {
+                return malformed(parser, event, MIDI_PARSER_ERROR_MALFORMED);
+            }
+        }
+    }
+
     if (cin >= 0x4 && cin <= 0x7) {
         if (!parser->in_sysex) {
             if (packet[1] != 0xf0) {
@@ -44,6 +61,15 @@ midi_event_kind_t midi_parser_feed_usb_packet(midi_parser_t *parser,
             }
             parser->in_sysex = true;
             parser->sysex_len = 0;
+        }
+        for (uint8_t i = 1; i <= payload_len; ++i) {
+            const bool start = parser->sysex_len == 0 && i == 1;
+            const bool end = cin != 0x4 && i == payload_len;
+            if ((start && packet[i] != 0xf0) ||
+                (end && packet[i] != 0xf7) ||
+                (!start && !end && packet[i] >= 0x80)) {
+                return malformed(parser, event, MIDI_PARSER_ERROR_MALFORMED);
+            }
         }
         if (parser->sysex_len + payload_len > MIDI_PARSER_SYSEX_CAPACITY) {
             return malformed(parser, event,

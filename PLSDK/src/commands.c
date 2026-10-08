@@ -24,32 +24,45 @@ void add_CC(void action(uint8_t channel, uint8_t value), uint8_t num) {
 
 static void add_sys_ex_command(void action(const uint8_t data[], uint8_t len),
                                uint8_t num, bool persists,
-                               uint8_t minimum_length) {
+                               uint8_t minimum_length, uint8_t maximum_length) {
     if (length_sys >= MAX_COUNT_COMMANDS || action == NULL) return;
     sys_ex_command_s new_sys_ex_com;
     new_sys_ex_com.num = num;
     new_sys_ex_com.action = action;
     new_sys_ex_com.persists = persists;
     new_sys_ex_com.minimum_length = minimum_length;
+    new_sys_ex_com.maximum_length = maximum_length;
     sys_com[length_sys++] = new_sys_ex_com;
 }
 
 void add_sys_ex_com(void action(const uint8_t data[], uint8_t len), uint8_t num) {
-    add_sys_ex_command(action, num, true, 0);
+    add_sys_ex_command(action, num, true, 0, UINT8_MAX);
 }
 
 void add_sys_ex_query(void action(const uint8_t data[], uint8_t len), uint8_t num) {
-    add_sys_ex_command(action, num, false, 0);
+    add_sys_ex_command(action, num, false, 0, UINT8_MAX);
 }
 
 void add_sys_ex_com_len(void action(const uint8_t data[], uint8_t len),
                         uint8_t num, uint8_t minimum_length) {
-    add_sys_ex_command(action, num, true, minimum_length);
+    add_sys_ex_command(action, num, true, minimum_length, UINT8_MAX);
 }
 
 void add_sys_ex_query_len(void action(const uint8_t data[], uint8_t len),
                           uint8_t num, uint8_t minimum_length) {
-    add_sys_ex_command(action, num, false, minimum_length);
+    add_sys_ex_command(action, num, false, minimum_length, UINT8_MAX);
+}
+
+void add_sys_ex_com_range(void action(const uint8_t data[], uint8_t len),
+                          uint8_t num, uint8_t minimum, uint8_t maximum) {
+    if (minimum > maximum) return;
+    add_sys_ex_command(action, num, true, minimum, maximum);
+}
+
+void add_sys_ex_query_range(void action(const uint8_t data[], uint8_t len),
+                            uint8_t num, uint8_t minimum, uint8_t maximum) {
+    if (minimum > maximum) return;
+    add_sys_ex_command(action, num, false, minimum, maximum);
 }
 
 static uint8_t command_input_cable = CABLE_NUM_EXTRA;
@@ -181,7 +194,8 @@ int read_sys_ex(void) {
             for (int i = 0; i < length_sys; ++i) {
                 if (sys_com[i].num == res[3]) {
                     const uint8_t payload_length = (uint8_t)(len - 5);
-                    if (payload_length < sys_com[i].minimum_length) {
+                    if (payload_length < sys_com[i].minimum_length ||
+                        payload_length > sys_com[i].maximum_length) {
                         return MIDI_PACKET_IGNORED;
                     }
                     sys_com[i].action(&res[4], payload_length);
@@ -190,7 +204,7 @@ int read_sys_ex(void) {
                 }
             }
         }
-        if (len >= 6 && res[1] == PLAYTRONICA_SYS_KEY &&
+        if (len == 6 && res[1] == PLAYTRONICA_SYS_KEY &&
             res[2] == PLAYTRONICA_KEY_FIRST &&
             res[3] == PLAYTRONICA_KEY_SECOND) {
             switch (res[4]) {

@@ -100,7 +100,7 @@ static void capture_bounded(const uint8_t data[], uint8_t length) {
 }
 
 static void test_sysex_minimum_payload_is_enforced(void) {
-    add_sys_ex_com_len(capture_bounded, 44, 2);
+    add_sys_ex_com_range(capture_bounded, 44, 2, 2);
     enqueue(0x04, 0xf0, PLAYTRONICA_KEY_FIRST, PLAYTRONICA_KEY_SECOND);
     enqueue(0x05, 44, 0xf7, 0);
     assert(read_sys_ex() == MIDI_PACKET_IGNORED);
@@ -120,6 +120,14 @@ static void test_sysex_minimum_payload_is_enforced(void) {
     assert(read_sys_ex() == MIDI_PACKET_IGNORED);
     assert(read_sys_ex() == CUSTOM_COMMAND);
     assert(bounded_calls == 1);
+    enqueue(0x04, 0xf0, PLAYTRONICA_KEY_FIRST, PLAYTRONICA_KEY_SECOND);
+    enqueue(0x04, 44, 1, 2);
+    enqueue(0x06, 3, 0xf7, 0xff);
+    assert(read_sys_ex() == MIDI_PACKET_IGNORED);
+    assert(read_sys_ex() == MIDI_PACKET_IGNORED);
+    assert(read_sys_ex() == MIDI_PACKET_IGNORED);
+    assert(bounded_calls == 1);
+
 }
 
 static void test_1000_cc_on_both_cables_are_not_dropped(void) {
@@ -201,6 +209,14 @@ static void test_system_boot_command_on_service_cable(void) {
        current parser must ignore it safely, then accept the namespaced frame. */
     enqueue(0x14, 0xf0, PLAYTRONICA_SYS_KEY, 127);
     enqueue(0x15, 0xf7, 0, 0);
+    assert(read_sys_ex() == MIDI_PACKET_IGNORED);
+    assert(read_sys_ex() == MIDI_PACKET_IGNORED);
+
+    /* Extra BOOT payload must not reach RESET_DEVICE. */
+    enqueue(0x14, 0xf0, PLAYTRONICA_SYS_KEY, PLAYTRONICA_KEY_FIRST);
+    enqueue(0x14, PLAYTRONICA_KEY_SECOND, 127, 1);
+    enqueue(0x15, 0xf7, 0xff, 0xff);
+    assert(read_sys_ex() == MIDI_PACKET_IGNORED);
     assert(read_sys_ex() == MIDI_PACKET_IGNORED);
     assert(read_sys_ex() == MIDI_PACKET_IGNORED);
 

@@ -106,6 +106,27 @@ static void test_malformed_recovery(void) {
     assert(feed(&parser, &event, 0x0b, 0xb0, 1, 3) == MIDI_EVENT_CHANNEL);
 }
 
+static void test_invalid_active_bytes_and_cin(void) {
+    midi_parser_t parser;
+    midi_event_t event;
+    midi_parser_init(&parser);
+    const uint8_t bad[][4] = {
+        {0x09, 0xb0, 7, 64}, {0x0b, 0xb0, 7, 0xff},
+        {0x0b, 0xb0, 0x80, 64}, {0x02, 0xf2, 1, 0},
+        {0x03, 0xf1, 1, 2}, {0x04, 0xf0, 1, 0x80},
+        {0x07, 0xf0, 0xff, 0xf7}, {0x04, 0xf0, 1, 0xf7}
+    };
+    /* F02: red when old unchecked parser is restored. */
+    for (size_t i = 0; i < sizeof bad / sizeof bad[0]; ++i) {
+        assert(midi_parser_feed_usb_packet(&parser, bad[i], &event) ==
+               MIDI_EVENT_MALFORMED);
+        assert(feed(&parser, &event, 0x0b, 0xb0, 7, 64) == MIDI_EVENT_CHANNEL);
+    }
+    assert(feed(&parser, &event, 0x02, 0xf1, 1, 0xff) == MIDI_EVENT_CHANNEL);
+    assert(feed(&parser, &event, 0x0c, 0xc0, 127, 0xff) == MIDI_EVENT_CHANNEL);
+    assert(feed(&parser, &event, 0x0f, 0x40, 0xff, 0xff) == MIDI_EVENT_CHANNEL);
+}
+
 static void test_deterministic_fuzz_invariants(void) {
     midi_parser_t parser;
     midi_event_t event;
@@ -138,6 +159,7 @@ int main(void) {
     test_realtime_interleaving_preserves_sysex();
     test_capacity_overflow_and_recovery();
     test_malformed_recovery();
+    test_invalid_active_bytes_and_cin();
     test_deterministic_fuzz_invariants();
     puts("midi_parser: boundaries, realtime, recovery and fuzz passed");
     return 0;
