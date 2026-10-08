@@ -4,6 +4,10 @@ set -eu
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/biotron-safety.XXXXXX")"
 trap 'rm -rf "$test_dir"' EXIT INT TERM
 compiler="${CC:-cc}"
+case "$(uname -s)" in
+  Darwin) dead_sections="-Wl,-dead_strip" ;;
+  *) dead_sections="-Wl,--gc-sections" ;;
+esac
 
 # Every runtime test is compiled twice. The sanitizer lane catches undefined
 # behaviour and memory errors; the optimized lane catches optimizer-sensitive
@@ -81,7 +85,12 @@ run_pair settings-storage \
   -I include tests/test_settings_storage.c
 
 run_pair persistence-scheduler \
-  -I include tests/test_persistence_scheduler.c
+  -Wno-strict-prototypes -Wno-unused-parameter \
+  -ffunction-sections -fdata-sections "$dead_sections" \
+  -DFLASH_ID_STARTUP=1765723554 \
+  -I tests/stubs -I include -I PLSDK/include \
+  PLSDK/src/midi_parser.c PLSDK/src/midi_diagnostics.c \
+  PLSDK/src/midi_tx.c PLSDK/src/commands.c tests/test_persistence_scheduler.c
 
 run_pair storage-v1 \
   -Wno-strict-prototypes -I tests/stubs -I include -I PLSDK/include \

@@ -223,9 +223,40 @@ void read_settings() {
     persistence_note_saved(&settings_save_scheduler);
 }
 
+/* Compare values, not padding: Settings_t is a shipping flash ABI. */
+static bool settings_equal(const Settings_t *left, const Settings_t *right) {
+    return left->id == right->id &&
+           left->BPM == right->BPM &&
+           left->lightBPM == right->lightBPM &&
+           left->fibPower == right->fibPower &&
+           left->firstValue == right->firstValue &&
+           left->filterPercent == right->filterPercent &&
+           left->scale == right->scale &&
+           left->isRandomPlantVelocity == right->isRandomPlantVelocity &&
+           left->isMutePlantVelocity == right->isMutePlantVelocity &&
+           left->minPlantVelocity == right->minPlantVelocity &&
+           left->maxPlantVelocity == right->maxPlantVelocity &&
+           left->isRandomLightVelocity == right->isRandomLightVelocity &&
+           left->isMuteLightVelocity == right->isMuteLightVelocity &&
+           left->minLightVelocity == right->minLightVelocity &&
+           left->maxLightVelocity == right->maxLightVelocity &&
+           left->random_note == right->random_note &&
+           left->same_note_plant == right->same_note_plant &&
+           left->same_note_light == right->same_note_light &&
+           left->fraction_note_off == right->fraction_note_off &&
+           left->light_note_range == right->light_note_range &&
+           left->light_pitch_mode == right->light_pitch_mode &&
+           left->performance_mode == right->performance_mode &&
+           left->middle_plant_note == right->middle_plant_note &&
+           left->plant_channel == right->plant_channel &&
+           left->light_channel == right->light_channel &&
+           left->swing_first_note_percent == right->swing_first_note_percent &&
+           left->is_mute_button_active == right->is_mute_button_active;
+}
+
 static bool settings_differ_from_persisted(void) {
     return !persisted_settings_snapshot_valid ||
-           memcmp(&settings, &persisted_settings_snapshot, sizeof(settings)) != 0;
+           !settings_equal(&settings, &persisted_settings_snapshot);
 }
 
 static void schedule_settings_save(void) {
@@ -690,6 +721,8 @@ void setup_commands() {
 void get_sys_ex_and_behave() {
     midi_diagnostics_service(time_us_64(), tud_midi_available());
     for (uint8_t packet = 0; packet < 32; ++packet) {
+        Settings_t before;
+        memcpy(&before, &settings, sizeof before);
         const int sys_ex_status = read_sys_ex();
         if (sys_ex_status == UNKNOWN) return;
 
@@ -715,7 +748,7 @@ void get_sys_ex_and_behave() {
                 break;
             case CUSTOM_COMMAND:
             case CUSTOM_CC_COMMAND:
-                schedule_settings_save();
+                if (!settings_equal(&before, &settings)) schedule_settings_save();
                 break;
             case CUSTOM_QUERY_COMMAND:
             case MIDI_PACKET_IGNORED:
