@@ -25,6 +25,14 @@ static void test_channel_lengths_and_consecutive_cc(void) {
     assert(event.len == 2);
     assert(feed(&parser, &event, 0x0f, 0xf6, 0, 0) == MIDI_EVENT_CHANNEL);
     assert(event.len == 1);
+    /* F06: red when CIN 5/F6 is sent down the SysEx-only branch. */
+    assert(feed(&parser, &event, 0x05, 0xf6, 0xff, 0xff) == MIDI_EVENT_CHANNEL);
+    assert(event.len == 1 && event.data[0] == 0xf6);
+    assert(feed(&parser, &event, 0x04, 0xf0, 1, 2) == MIDI_EVENT_NONE);
+    assert(feed(&parser, &event, 0x05, 0xf6, 0xff, 0xff) == MIDI_EVENT_CHANNEL);
+    assert(event.sysex_aborted && !parser.in_sysex);
+    assert(feed(&parser, &event, 0x0b, 0xb0, 7, 64) == MIDI_EVENT_CHANNEL);
+
 }
 
 static void test_all_sysex_end_shapes(void) {

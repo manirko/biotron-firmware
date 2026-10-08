@@ -261,6 +261,13 @@ int main(void) {
     test_query_reply_uses_requesting_cable();
     test_system_boot_command_on_service_cable();
     test_sysex_minimum_payload_is_enforced();
+    midi_diagnostics_snapshot_t before_tune, after_tune;
+    midi_diagnostics_snapshot(&before_tune);
+    enqueue(0x05, 0xf6, 0xff, 0xff);
+    assert(read_sys_ex() == MIDI_PACKET_IGNORED);
+    midi_diagnostics_snapshot(&after_tune);
+    assert(after_tune.malformed[0] == before_tune.malformed[0]);
+    assert(after_tune.parsed_system_common[0] == before_tune.parsed_system_common[0] + 1);
     test_clock_is_exactly_24_ppqn();
     test_registries_fail_closed_at_capacity();
     assert(read_sys_ex() == UNKNOWN);

@@ -54,7 +54,8 @@ midi_event_kind_t midi_parser_feed_usb_packet(midi_parser_t *parser,
         }
     }
 
-    if (cin >= 0x4 && cin <= 0x7) {
+    /* CIN 5 also carries one-byte System Common (Tune Request), not SysEx. */
+    if (cin >= 0x4 && cin <= 0x7 && !(cin == 0x5 && packet[1] == 0xf6)) {
         if (!parser->in_sysex) {
             if (packet[1] != 0xf0) {
                 return malformed(parser, event, MIDI_PARSER_ERROR_MALFORMED);
