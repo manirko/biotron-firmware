@@ -28,17 +28,6 @@ static bool is_critical_message(const uint8_t data[], uint16_t length) {
            data[1] == CC_STOP_ALL_NOTES;
 }
 
-static bool is_all_notes_off(const midi_tx_message_t *message) {
-    return message->length >= 3 && message->offset == 0 &&
-           (message->data[0] & 0xf0u) == CC_START &&
-           message->data[1] == CC_STOP_ALL_NOTES;
-}
-
-static bool is_note_off_message(const midi_tx_message_t *message) {
-    return message->length >= 3 && message->offset == 0 &&
-           (message->data[0] & 0xf0u) == NOTE_OFF;
-}
-
 static void remove_message(size_t index) {
     if (index + 1 < queue_count) {
         memmove(&queue[index], &queue[index + 1],
@@ -89,36 +78,8 @@ bool midi_tx_enqueue(uint8_t cable, const uint8_t data[], uint16_t length) {
     }
 
     const bool critical = is_critical_message(data, length);
-    if (critical) {
-        for (size_t i = 0; i < queue_count; ++i) {
-            const midi_tx_message_t *queued = &queue[i];
-            if (queued->offset == 0 && queued->cable == cable &&
-                queued->length == length &&
-                memcmp(queued->data, data, length) == 0) {
-                midi_diagnostics_tx_coalesced();
-                return true;
-            }
-            if ((data[0] & 0xf0u) == NOTE_OFF && is_all_notes_off(queued) &&
-                queued->cable == cable &&
-                (queued->data[0] & 0x0fu) == (data[0] & 0x0fu)) {
-                midi_diagnostics_tx_coalesced();
-                return true;
-            }
-        }
-        if ((data[0] & 0xf0u) == CC_START && length >= 3 &&
-            data[1] == CC_STOP_ALL_NOTES) {
-            for (size_t i = 0; i < queue_count;) {
-                const midi_tx_message_t *queued = &queue[i];
-                if (is_note_off_message(queued) && queued->cable == cable &&
-                    (queued->data[0] & 0x0fu) == (data[0] & 0x0fu)) {
-                    remove_message(i);
-                    midi_diagnostics_tx_evicted();
-                } else {
-                    ++i;
-                }
-            }
-        }
-    }
+    /* Releases are ordered events: merging across a later Note On can leave
+     * the receiver sounding. Keep every accepted event in FIFO order. */
     const size_t noncritical_limit =
             MIDI_TX_QUEUE_CAPACITY - MIDI_TX_RESERVED_CRITICAL;
     if (!critical && queue_count >= noncritical_limit) {
