@@ -160,6 +160,56 @@ int main(void) {
     }
     now_us = deadline + SETTINGS_SAVE_DEBOUNCE_US;
     service_settings_persistence();
+    /* F03: invalid percent never mutates/schedules; endpoints roundtrip.
+     * Red if the old unchecked percent setter is restored. */
+    for (uint16_t value = 101; value <= 127; ++value) {
+        const uint8_t message[] = {0xf0,0x14,0x0d,1,(uint8_t)value,0xf7};
+        Settings_t before = settings;
+        enqueue_sysex(message, sizeof message);
+        get_sys_ex_and_behave();
+        assert(settings_equal(&before, &settings));
+        assert(!settings_save_scheduler.pending);
+    }
+    void (*percent_sysex[])(const uint8_t[], uint8_t) = {
+        set_fib_power_sys_ex, set_fib_first_sys_ex
+    };
+    void (*percent_cc[])(uint8_t, uint8_t) = {
+        set_fib_power_cc, set_fib_first_cc
+    };
+    for (size_t field = 0; field < 2; ++field) {
+        for (uint16_t value = 0; value <= 100; ++value) {
+            const uint8_t data[] = {(uint8_t)value};
+            percent_sysex[field](data, 1);
+            assert((field == 0 ? settings.fibPower : settings.firstValue) == value / 100.0);
+            save_settings();
+            Settings_t before = settings;
+            read_settings();
+            assert(settings_equal(&before, &settings));
+        }
+        for (uint16_t value = 0; value <= 127; ++value) {
+            percent_cc[field](0, (uint8_t)value);
+            assert((field == 0 ? settings.fibPower : settings.firstValue) == value / 127.0);
+            save_settings();
+            Settings_t before = settings;
+            read_settings();
+            assert(settings_equal(&before, &settings));
+        }
+        Settings_t before = settings;
+        for (uint16_t value = 128; value <= 255; ++value) {
+            percent_cc[field](0, (uint8_t)value);
+            assert(settings_equal(&before, &settings));
+        }
+    }
+    Settings_t legacy = mixolyd;
+    legacy.fibPower = 50;
+    legacy.firstValue = 10;
+    memcpy(flash_memory, &legacy, sizeof legacy);
+    read_settings();
+    assert(settings.fibPower == 0.5 && settings.firstValue == 0.1);
+    const uint32_t migrated_saves = program_calls;
+    read_settings();
+    assert(program_calls == migrated_saves);
+    puts("percent_production: SysEx0-100, CC0-127, invalid input and legacy migration passed");
     puts("persistence_production: real changes, dirty no-ops, padding and invalid input passed");
     return 0;
 }

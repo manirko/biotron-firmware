@@ -320,18 +320,22 @@ void change_bpm_cc(uint8_t channel, uint8_t value) {
 }
 
 void set_fib_power_sys_ex(const uint8_t data[], uint8_t len) {
+    if (len != 1 || data[0] > 100) return;
     settings.fibPower = (double )data[0] / 100;
 }
 
 void set_fib_power_cc(uint8_t channel, uint8_t value) {
+    if (value > 127) return;
     settings.fibPower = (double )value / 127;
 }
 
 void set_fib_first_sys_ex(const uint8_t data[], uint8_t len) {
+    if (len != 1 || data[0] > 100) return;
     settings.firstValue = (double )data[0] / 100;
 }
 
 void set_fib_first_cc(uint8_t channel, uint8_t value) {
+    if (value > 127) return;
     settings.firstValue = (double )value / 127;
 }
 
