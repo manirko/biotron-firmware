@@ -1,13 +1,13 @@
 # Source: projects/biotron-paul-7818/proposals/firmware-pull-request-ci.yml (reviewed 2026-08-28 for 0e318a8).
-# Installed 2026-09-06 with three edits: push trigger on every branch, CC=clang for the host suite,
-# candidate version 1.9.8. Identity values stay owner-reviewed; this workflow never releases.
+# Internal 1.10.10 build parameters match the frozen 2ae1973 A06-A08/Fibonacci candidate.
+# CI uses its recorded Ubuntu toolchain; its UF2 is not the frozen macOS-built UF2.
+# This workflow never releases or replaces a delivered artifact.
 name: Firmware candidate checks
 
 on:
   push:
     branches: ["**"]
   pull_request:
-    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -25,8 +25,10 @@ jobs:
       PICO_SDK_COMMIT: 98a542c1a62fb549ffb5d66a3e5892b06276b670
       BIOTRON_FLASH_ID: 1765723554
       BIOTRON_VERSION_MAJOR: 1
-      BIOTRON_VERSION_MINOR: 9
-      BIOTRON_VERSION_PATCH: 8
+      BIOTRON_VERSION_MINOR: 10
+      BIOTRON_VERSION_PATCH: 10
+      PICO_BOARD: pico
+      BIOTRON_LED_MUSIC_PULSE: "ON"
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -63,11 +65,42 @@ jobs:
           PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
         run: |
           cmake -S . -B build -G Ninja \
+            -DPICO_BOARD="$PICO_BOARD" \
             -DBIOTRON_FLASH_ID="$BIOTRON_FLASH_ID" \
             -DBIOTRON_VERSION_MAJOR="$BIOTRON_VERSION_MAJOR" \
             -DBIOTRON_VERSION_MINOR="$BIOTRON_VERSION_MINOR" \
             -DBIOTRON_VERSION_PATCH="$BIOTRON_VERSION_PATCH" \
+            -DBIOTRON_LED_MUSIC_PULSE="$BIOTRON_LED_MUSIC_PULSE" \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_BUILD_TYPE=Release
+          python3 - <<'PY'
+          import json, os, pathlib, shlex
+          expected = {
+              "FLASH_ID_STARTUP": os.environ["BIOTRON_FLASH_ID"],
+              "MAJOR_VERSION": os.environ["BIOTRON_VERSION_MAJOR"],
+              "MINOR_VERSION": os.environ["BIOTRON_VERSION_MINOR"],
+              "PATCH_VERSION": os.environ["BIOTRON_VERSION_PATCH"],
+              "BIOTRON_LED_MUSIC_PULSE": "1",
+              "PICO_BOARD": f'"{os.environ["PICO_BOARD"]}"',
+              "PICO_RP2040": "1",
+          }
+          required = {"src/params.c", "src/leds.c", "src/music.c"}
+          root = pathlib.Path.cwd()
+          for entry in json.loads(pathlib.Path("build/compile_commands.json").read_text()):
+              path = pathlib.Path(entry["file"])
+              relative = path.relative_to(root).as_posix() if path.is_relative_to(root) else ""
+              if relative not in required:
+                  continue
+              arguments = entry.get("arguments") or shlex.split(entry["command"])
+              for name, value in expected.items():
+                  actual = [arg for arg in arguments if arg.startswith(f"-D{name}=")]
+                  if actual != [f"-D{name}={value}"]:
+                      raise SystemExit(f"{relative}: {name} compiler definitions {actual} != {value}")
+              required.remove(relative)
+          if required:
+              raise SystemExit(f"Missing runtime compile units: {sorted(required)}")
+          print("Runtime compiler definitions match the declared candidate identity")
+          PY
           cmake --build build --parallel 2
           test -s build/biotron.uf2
           test -s build/biotron.elf
@@ -77,6 +110,7 @@ jobs:
         run: |
           mkdir -p candidate
           cp build/biotron.uf2 build/biotron.elf candidate/
+          cp build/CMakeCache.txt build/compile_commands.json candidate/
           git rev-parse HEAD > candidate/firmware-commit.txt
           git -C "$RUNNER_TEMP/pico-sdk" rev-parse HEAD > candidate/pico-sdk-commit.txt
           arm-none-eabi-gcc --version > candidate/toolchain.txt
@@ -94,6 +128,10 @@ jobs:
             echo "pico_sdk_commit=$PICO_SDK_COMMIT"
             echo "settings_compatibility_id=$BIOTRON_FLASH_ID"
             echo "candidate_version=$BIOTRON_VERSION_MAJOR.$BIOTRON_VERSION_MINOR.$BIOTRON_VERSION_PATCH"
+            echo "pico_board=$PICO_BOARD"
+            echo "led_music_pulse=$BIOTRON_LED_MUSIC_PULSE"
+            echo "build_type=Release"
+            echo "FROZEN_DELIVERY_UF2=false"
             echo "NOT_A_RELEASE=true"
           } > candidate/BUILD-IDENTITY.txt
 
