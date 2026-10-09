@@ -217,7 +217,7 @@ def main() -> None:
         "midi-parser", "commands", "midi-diagnostics", "midi-health",
         "settings-readback", "led-engine", "led-adapter", "runtime-safety", "usb-string",
         "settings-storage", "persistence-scheduler", "storage-v1",
-        "music-v1", "note-lifecycle", "music-scheduler", "raw-plant",
+        "music-v1", "note-lifecycle", "music-scheduler", "calibration-cue", "raw-plant",
         "midi-tx",
     ]
     for required in ("cf264aa", "1765723554", "human MIDI channels 2/3"):

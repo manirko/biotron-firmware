@@ -110,6 +110,14 @@ run_pair music-scheduler \
   -Wno-strict-prototypes -I tests/stubs -I include -I PLSDK/include \
   src/global.c tests/test_music_scheduler.c
 
+run_pair calibration-cue \
+  -Wno-strict-prototypes -Wno-unused-parameter \
+  -ffunction-sections -fdata-sections "$dead_sections" \
+  -DFLASH_ID_STARTUP=1765723554 -DBIOTRON_LED_MUSIC_PULSE=1 \
+  -I tests/stubs -I include -I PLSDK/include \
+  src/params.c src/global.c src/music.c PLSDK/src/music.c \
+  tests/test_calibration_cue_lifecycle.c
+
 run_pair raw-plant \
   -Wno-strict-prototypes -I tests/stubs -I include -I PLSDK/include \
   src/raw_plant.c tests/test_raw_plant_runtime.c

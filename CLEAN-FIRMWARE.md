@@ -1,4 +1,22 @@
-# Clean firmware candidate — 7 October 2026
+# Clean firmware candidates
+
+## 1.10.11 internal successor — 9 October 2026
+
+The full-project audit found that a calibration cue could send Note Off on
+the newly selected Plant channel instead of its original channel. This branch
+captures note+channel at Note On using the existing note-identity helper.
+Timed release, recalibration, sensor loss and defaults release that identity.
+The cue's notes, cadence and velocity 24 are unchanged.
+
+Production-linked regressions cover two independent receiver models and the
+channel boundaries 0 and 15. They fail on 1.10.10 and pass on this source;
+the complete host gate has 18 groups in ASan/UBSan and optimized lanes.
+USB identity, settings ABI/ID 1765723554, stored presets, wire commands and
+ordinary music are unchanged. Source/host evidence is not hardware acceptance.
+Build 1.10.11 with a fresh artifact manifest; never overwrite the frozen
+1.10.10 UF2 (`598d5a084f1eb3274e7c62b7bbeec1701f49d28edad87662e19c084dfc75477d`).
+
+## 1.10.9 cleanup — 7 October 2026 (historical)
 
 Internal candidate 1.10.9 removes the abandoned composition experiment from
 1.10.8 beta21. It restores the production tree at 1669c62, preserving all

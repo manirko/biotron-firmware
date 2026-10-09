@@ -14,6 +14,7 @@
 #include "raw_plant.h"
 #include "leds.h"
 #include "runtime_safety.h"
+#include "midi_note_lifecycle.h"
 
 #include "global.h"
 
@@ -48,13 +49,14 @@ static const calibration_cue_event_t CALIBRATION_CUE[] = {
         {24, 71, 3}, {29, 67, 3}, {34, 62, 4}, {40, 60, 9},
 };
 static uint8_t calibration_cue_index = 0;
-static uint8_t calibration_cue_active_note = 0xff;
+static uintptr_t calibration_cue_active_identity = 0;
 static uint8_t calibration_cue_note_off_tick = 0;
 
 static void stop_calibration_cue(void) {
-    if (calibration_cue_active_note != 0xff) {
-        note_off(settings.plant_channel, calibration_cue_active_note);
-        calibration_cue_active_note = 0xff;
+    if (calibration_cue_active_identity != 0) {
+        note_off(midi_note_identity_channel(calibration_cue_active_identity),
+                 midi_note_identity_note(calibration_cue_active_identity));
+        calibration_cue_active_identity = 0;
     }
 }
 
@@ -64,15 +66,16 @@ static void reset_calibration_cue(void) {
 }
 
 static void service_calibration_cue(uint8_t tick) {
-    if (calibration_cue_active_note != 0xff &&
+    if (calibration_cue_active_identity != 0 &&
         tick >= calibration_cue_note_off_tick) stop_calibration_cue();
     if (calibration_cue_index >=
         sizeof CALIBRATION_CUE / sizeof CALIBRATION_CUE[0]) return;
     const calibration_cue_event_t *event =
             &CALIBRATION_CUE[calibration_cue_index];
     if (event->tick != tick) return;
-    note_on(settings.plant_channel, event->note, CALIBRATION_MIDI_VELOCITY);
-    calibration_cue_active_note = event->note;
+    const uint8_t channel = settings.plant_channel;
+    note_on(channel, event->note, CALIBRATION_MIDI_VELOCITY);
+    calibration_cue_active_identity = midi_note_identity_pack(channel, event->note);
     calibration_cue_note_off_tick = tick + event->duration_ticks;
     calibration_cue_index++;
 }

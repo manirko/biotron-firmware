@@ -1,7 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased — 1.9.x team beta on `codex/*` branches (not a customer candidate)
+## Unreleased — 1.10.11 internal candidate, 9 October 2026
+
+- Calibration cues now release the exact Note On channel and note after a
+  Plant channel change, including timed release, recalibration, sensor loss
+  and defaults. This reuses the ordinary-note identity helper.
+- Added production-linked receiver regressions that fail on frozen 1.10.10;
+  the host gate now runs 18 groups in sanitizer and optimized lanes.
+- Cadence, cue velocity, settings/USB identity and command IDs are unchanged.
+  This source is not a customer release and has not been flashed or accepted
+  on hardware. The frozen 1.10.10 artifact is retained.
+
+## Historical unreleased — 1.9.x team beta on `codex/*` branches
 
 Current team beta: `1.9.8 beta-08` (`7471707`), bench unit only. Planned next
 release: `2.0.0`. Step-by-step evidence lives in `TEST-ARTIFACT-1.9.*.md`.
@@ -9,7 +20,8 @@ release: `2.0.0`. Step-by-step evidence lives in `TEST-ARTIFACT-1.9.*.md`.
 ### Added
 
 - read-only MIDI/USB health diagnostics with bounded counters (SysEx query `124`);
-- safe runtime plant recalibration with a quiet, performance-level cue (SysEx `123`);
+- safe runtime plant recalibration with a quiet, performance-level cue
+  (historical provisional SysEx `123`; current action is `125`, readback `123`);
 - self-healing silent music scheduler;
 - experimental Music + Pulse LED engine with breath envelope and zone spread
   (`BIOTRON_LED_MUSIC_PULSE`, off by default);
