@@ -40,9 +40,10 @@
 
 ## Developer quick start
 
-The current cleanup branch targets **1.10.9 (internal candidate)**. See
+The current review branch targets **1.10.11 (internal candidate)**. See
 [`CLEAN-FIRMWARE.md`](CLEAN-FIRMWARE.md) for its exact scope and retained fixes.
-It removes the abandoned composition experiment from 1.10.8 beta21.
+It fixes calibration Note Off after a channel change. The frozen 1.10.10
+artifact remains unchanged; this candidate requires its own hardware acceptance.
 
 Maintainers should start with [`DEVELOPING.md`](DEVELOPING.md). It explains the runtime ownership model,
 compatibility rules, commit stack, exact build identity, test map and the
@@ -57,13 +58,17 @@ clean candidate; see `CLEAN-FIRMWARE.md` for the exact scope.
 ```
 
 `cf264aa` is the historical `1.8.3` compatibility candidate; `7471707` is
-historical `1.9.8 beta-08`. This cleanup branch's exact runtime source is
-`303aafc`, version `1.10.9`, still an internal candidate. Documentation HEAD is
-not a new firmware version. A customer release/version requires separate
+historical `1.9.8 beta-08`, `303aafc` is the 1.10.9 cleanup, and `2ae1973`
+is the frozen 1.10.10 source. Record the new source SHA and 1.10.11 UF2 hash
+with every build. Documentation HEAD is not an artifact identity.
+A customer release/version requires separate
 acceptance; no future `2.0.0` release is authorized by this README.
-CI runs the host suite on every push and pull request
-(`.github/workflows/pull_request_ci.yml`). Passing host tests does not by
-itself authorize a merge or release.
+CI runs the host suite and the pinned Pico SDK build on every push and pull
+request (`.github/workflows/pull_request_ci.yml`). It verifies the actual
+compiler definitions for version 1.10.11, settings identity and LED flag,
+then archives compiler commands, cache, toolchain and artifact hashes.
+Ubuntu CI artifacts are separate from the macOS delivery build. Passing
+host tests or CI does not itself authorize a merge or release.
 
 
 
@@ -129,7 +134,7 @@ Biotron provides a unique fusion of nature and technology, turning the life proc
 
 2. Clone the repo
    ```sh
-   git clone https://github.com/Playtronica/biotron-firmware.git
+   git clone https://github.com/manirko/biotron-firmware.git
    ```
 3. Run the host safety suite
    ```sh

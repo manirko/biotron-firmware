@@ -5,6 +5,15 @@ Read it before changing MIDI, USB, settings, timers or BOOT.
 
 ## Current branch in one minute
 
+- As of 9 October 2026, this branch prepares **1.10.11**, an internal
+  successor to frozen 1.10.10 (`2ae1973`). It captures the calibration cue's
+  note and channel when sending Note On and releases that same identity even
+  if Plant channel changes. It reuses `midi_note_lifecycle.h`; no new timer,
+  protocol or settings field is introduced. The delivered 1.10.10 UF2 must
+  not be replaced or relabelled. Hardware, DAW and owner acceptance are open.
+- The following 1.8.x/1.9.x entries are historical context, not current
+  candidate acceptance. Current command IDs are listed under
+  “Reserved Biotron query/action IDs” below.
 - Shipping source baseline: tag `1.8.2`, commit `67920c2`.
 - Last declared compatibility candidate: `cf264aa` (`1.8.3`); its evidence is
   below and in `CHANGELOG.md`.
@@ -106,7 +115,7 @@ Run the complete host suite first:
 ./tests/run_host_tests.sh
 ```
 
-It compiles 17 production-linked test groups twice: ASan/UBSan and optimized
+It compiles 18 production-linked test groups twice: ASan/UBSan and optimized
 `-O2`, plus source/ABI/descriptor contracts. A focused test is useful while
 editing, but the full script is the pre-commit gate.
 
@@ -123,8 +132,11 @@ timestamp as the settings ID:
 cmake -S . -B build -G Ninja \
   -DBIOTRON_FLASH_ID=1765723554 \
   -DBIOTRON_VERSION_MAJOR=1 \
-  -DBIOTRON_VERSION_MINOR=8 \
-  -DBIOTRON_VERSION_PATCH=3 \
+  -DBIOTRON_VERSION_MINOR=10 \
+  -DBIOTRON_VERSION_PATCH=11 \
+  -DBIOTRON_LED_MUSIC_PULSE=ON \
+  -DPICO_BOARD=pico \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel 2
 shasum -a 256 build/biotron.uf2 build/biotron.elf
@@ -134,6 +146,13 @@ shasum -a 256 build/biotron.uf2 build/biotron.elf
 `make release` target uses a timestamp as settings identity and the Dockerfile
 clones mutable dependencies; neither is release evidence. Keep them only for
 legacy reference until the team replaces the production pipeline.
+The 1.10.11 candidate uses Pico SDK 2.3.0 at
+`98a542c1a62fb549ffb5d66a3e5892b06276b670`, ARM GNU 13.2.Rel1 and
+the A06–A08/Fibonacci LED configuration above. Preserve CMakeCache,
+compile_commands, toolchain versions and artifact hashes with the evidence.
+The calibration regression `test_calibration_cue_lifecycle.c` checks both
+single-note and repeated-note receivers, timed release, recalibration,
+sensor loss and defaults. Its channel-change cases fail on the frozen source.
 
 ## How to change something
 
