@@ -36,7 +36,7 @@
 | `PLSDK/src/midi_parser.c` | Реализация модуля midi_parser. |
 | `PLSDK/src/midi_tx.c` | Реализация модуля midi_tx. |
 | `PLSDK/src/music.c` | Реализация модуля music. |
-| `PLSDK/src/usb_descriptors.c` | USB descriptor callbacks; единственный runtime USB patch. |
+| `PLSDK/src/usb_descriptors.c` | USB descriptor callbacks; today MIDI-first layout retained by PLSDK integration fixes. |
 | `PONYTAIL-AUDIT-2026-09-06.md` | Унаследованная документация: PONYTAIL-AUDIT-2026-09-06. |
 | `README.md` | Вход в USB Fix проект: база, сборка, проверки, ограничения. |
 | `SettingsDescription.md` | CC/SysEx протокол Biotron. |
@@ -116,3 +116,10 @@
 | `validation/stable-audit.json` | Отчёт независимой проверки: stable-audit. |
 
 - `REVIEW-PLSDK-20261102.md` — exact integration review, fixed regressions, upstream requirements and tester scope.
+
+| `delivery/sergey-20261102/README.md` | Состав полного пакета, версии и границы. |
+| `delivery/sergey-20261102/START-HERE.html` | Офлайн старт Сергея: четыре действия. |
+| `delivery/sergey-20261102/CLAUDE.md` | Точные команды существующего тестера, first-fault, cleanup и ограничения. |
+| `delivery/sergey-20261102/TEST-PLAN.md` | Полная матрица доступных Windows/phone/DAW/SDK проверок. |
+| `delivery/sergey-20261102/FIRMWARE-CARD.md` | Новый exactUF2, отдельный допуск платы/backup/recovery. |
+| `delivery/sergey-20261102/REPORT-TEMPLATE.md` | Раздельные software/manual/firmware результаты, без выдуманного PASS. |

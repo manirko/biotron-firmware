@@ -13,6 +13,12 @@ checks will be recorded for this branch. Physical acceptance remains NOT_RUN.
 The current explicit task permits a tester pre-release in `manirko`, never latest.
 Team sending, production/factory changes and physical flashing remain separate.
 
+## Complete Sergey test packet · 02Nov v2
+
+[Start here](delivery/sergey-20261102/START-HERE.html) · [Claude instructions](delivery/sergey-20261102/CLAUDE.md) · [full test matrix](delivery/sergey-20261102/TEST-PLAN.md).
+The assembled packet reuses the exact Oct30 web/helper and the exact81a7f820 firmware source; this documentation change does not rebuild any runtime.
+The packet adds no runner, service or device writer. Physical installation remains separately gated.
+
 ## Inherited descriptor-only checkpoint (historical)
 
 # Biotron 1.10.11 · OP-XY USB Fix · тест 02.11.2026
