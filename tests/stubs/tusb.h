@@ -23,6 +23,9 @@
 #define TUD_OPT_HIGH_SPEED 0
 #define TUSB_DESC_DEVICE 1
 #define TUSB_DESC_STRING 3
+#define TUSB_CLASS_MISC 0xEF
+#define MISC_SUBCLASS_COMMON 0x02
+#define MISC_PROTOCOL_IAD 0x01
 
 typedef struct __attribute__((packed)) {
     uint8_t bLength;

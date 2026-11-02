@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-02",
+  "base": "a7739040e07ba7ca04767682755eec8589c15234",
+  "version": "1.10.11",
+  "settings_id": 1765723554,
+  "led_music_pulse": "ON (existing candidate configuration, A06-A08)",
+  "compiler_definition_checks": {
+    "candidate-build-1": "PASS",
+    "candidate-build-2": "PASS"
+  },
+  "host_suite": "PASS: 18 groups x ASan+UBSan and optimized lanes; release contract and production syntax checks",
+  "repeat_build": "PASS: byte-identical UF2",
+  "sha256": "bf443ff30cb022675d81954e0bc4ccc157f50918f9c9a36dca250259c17f8383",
+  "hardware": {
+    "opxy_enumeration": "NOT_RUN",
+    "midi_notes_noteoff": "NOT_RUN",
+    "clock": "NOT_RUN",
+    "mac_windows_cdc_sysex": "NOT_RUN",
+    "settings_boot_rollback": "NOT_RUN",
+    "led_calibration_hearing": "NOT_RUN"
+  }
+}

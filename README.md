@@ -1,236 +1,49 @@
-<div id="top"></div>
+# Biotron 1.10.11 · OP-XY USB Fix · тест 02.11.2026
 
-<!-- PROJECT SHIELDS -->
-<!--
-*** I'm using markdown "reference style" links for readability.
-*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
-*** See the bottom of this document for the declaration of the reference variables
-*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
-*** https://www.markdownguide.org/basic-syntax/#reference-style-links
--->
-<!--
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![MIT License][license-shield]][license-url]
--->
+Отдельная прошивка для проверки USB MIDI на OP-XY, поверх существующего внутреннего кандидата Biotron1.10.11. Не официальный релиз.
 
+## Pipeline
+`manirko/biotron-firmware@a773904 (existing internal1.10.11)` → USB descriptor patch → host suite → Release RP2040 UF2 → независимый разбор бинарника + две чистые сборки → ручной тест Андрея.
 
-<!-- PROJECT LOGO -->
-<br />
-<div align="center">
-  <a href="https://github.com/Playtronica">
-    <img src="static/logo.png" alt="Logo" width="100">
-  </a>
+## База и статус
+База: `a7739040e07ba7ca04767682755eec8589c15234`, проверена fresh fetch02.11.2026. Сохраняет прежние 1.10.11/ID1765723554/LED Music+Pulse ON (только A06–A08). Новых музыкальных функций в этой задаче нет. Runtime diff к базе — только 9 строк `PLSDK/src/usb_descriptors.c`: EF/02/01 и MIDI перед CDC. Обновлены только ожидания регрессионного теста и три константы host stub.
 
-<h3 align="center">Biotron</h3>
+Все 18 групп host-тестов в ASan/UBSan и optimized lanes, release contract и syntax checks — PASS. Две чистые Release-сборки дают один UF2. Дескрипторы, UF2/RP2040/границы flash/векторы, две MIDI cable и CDC — PASS. Физические OP-XY, MIDI/clock/CDC, settings/BOOT/откат, LED/калибровка/слух — NOT_RUN.
 
-  <p align="center">
-    BODY IS AN INSTRUMENT
-    <br />
-    <a href="https://github.com/Playtronica/biotron-firmware"><strong>Explore the docs »</strong></a>
-    <br />
-    <br />
-    <a href="https://github.com/Playtronica/Biotron/issues">Report Bug</a>
-    ·
-    <a href="https://github.com/Playtronica/Biotron/issues">Request Feature</a>
-  </p>
-</div>
+SHA256 тестового 1.10.11UF2: `bf443ff30cb022675d81954e0bc4ccc157f50918f9c9a36dca250259c17f8383`.
+Отдельно воспроизведён прежний стабильный F03(1.8.2) байт в байт: `e8ac496120541013df1e1f6aee134286ed7e945fc4535276f0d518d34bb87e76`. Его ветка — `codex/biotron-opxy-usb-fix-20261102`, commit73d2200. Stable и завод не менялись.
 
-## Developer quick start
+## File map
+Каждый файл перечислен в [FILE-MAP.md](FILE-MAP.md).
+- `PLSDK/src/usb_descriptors.c` — единственное runtime-изменение.
+- `tests/run_host_tests.sh` — унаследованный полный suite; `tests/test_release_contract.py` проверяет новый порядок и класс; `tests/stubs/tusb.h` знает три class constant.
+- `tools/build.sh`, `tools/verify_uf2.py` — воспроизведение и независимый разбор файла без USB-доступа.
+- `validation/` — результаты проверки точных UF2 и compiler definitions.
+- [USB-FIX-VALIDATION.md](USB-FIX-VALIDATION.md), [TEST-OPXY.md](TEST-OPXY.md) — источники/ограничения и проверка до 4 шагов.
+- `DEVELOPING.md`, `CLEAN-FIRMWARE.md`, `LED-MUSIC-PULSE.md` — унаследованный контекст внутреннего кандидата.
 
-The current review branch targets **1.10.11 (internal candidate)**. See
-[`CLEAN-FIRMWARE.md`](CLEAN-FIRMWARE.md) for its exact scope and retained fixes.
-It fixes calibration Note Off after a channel change. The frozen 1.10.10
-artifact remains unchanged; this candidate requires its own hardware acceptance.
+## Где данные
+Сборки/ELF/compile_commands/логи/официальный download/первичный GitHub JSON: `~/ProjectData/biotron-opxy-usb-fix-20261102/`.
+Исходные F03/R03 и manifest родителя: `~/ProjectData/Playtronica/aiplay/playtron-opxy-usb-2026-11-02/delivery-current-r2/`.
+SDK/compiler: `~/ProjectData/toolchains/`. В git только исходники/документы/небольшие отчёты; секретов нет.
 
-Maintainers should start with [`DEVELOPING.md`](DEVELOPING.md). It explains the runtime ownership model,
-compatibility rules, commit stack, exact build identity, test map and the
-boundary between firmware, Windows/DAW, offline Settings and Help. The current
-Sergey test uses Ableton, not the historical REAPER task.
-The optional A06-A08 note-and-beat light experiment is documented separately in
-[`LED-MUSIC-PULSE.md`](LED-MUSIC-PULSE.md). It is ON for this A06–A08/Fibonacci
-clean candidate; see `CLEAN-FIRMWARE.md` for the exact scope.
+## Как собрать и проверить
+Pico SDK2.3.0@`98a542c1a62fb549ffb5d66a3e5892b06276b670`, TinyUSB@`86ad6e56c1700e85f1c5678607a762cfe3aa2f47`, Arm GNU13.2.Rel1, picotool2.3.0. Локально cmake4.4.3/ninja1.13.2. SDK/TinyUSB clean при проверке. SettingsID и build date закреплены раздельно:1765723554 и `SOURCE_DATE_EPOCH=1793577600` (02.11.2026UTC).
 
-```bash
+```sh
 ./tests/run_host_tests.sh
+./tools/build.sh candidate "$HOME/ProjectData/biotron-opxy-usb-fix-20261102/my-candidate-build"
+python3 tools/verify_uf2.py --selftest
+python3 tools/verify_uf2.py "$HOME/ProjectData/biotron-opxy-usb-fix-20261102/my-candidate-build/biotron.uf2" --reference /absolute/path/R03_Biotron_ROLLBACK_1.8.2_official.uf2
 ```
 
-`cf264aa` is the historical `1.8.3` compatibility candidate; `7471707` is
-historical `1.9.8 beta-08`, `303aafc` is the 1.10.9 cleanup, and `2ae1973`
-is the frozen 1.10.10 source. Record the new source SHA and 1.10.11 UF2 hash
-with every build. Documentation HEAD is not an artifact identity.
-A customer release/version requires separate
-acceptance; no future `2.0.0` release is authorized by this README.
-CI runs the host suite and the pinned Pico SDK build on every push and pull
-request (`.github/workflows/pull_request_ci.yml`). It verifies the actual
-compiler definitions for version 1.10.11, settings identity and LED flag,
-then archives compiler commands, cache, toolchain and artifact hashes.
-Ubuntu CI artifacts are separate from the macOS delivery build. Passing
-host tests or CI does not itself authorize a merge or release.
+Нужна новая папка сборки. GitHub унаследованный CI выполняет те же host-тесты и build того же commit с pinned SDK. LinuxCI использует другой ARM compiler и делает отдельный artifact, не заменяет macOSUF2 для Андрея. Унаследованные `make release`/timestamp settings ID не использовать.
 
+## Safety rails
+Тестовая 1.10.11 — для подтверждённых A06–A08 и отдельного выбора этой базы. Если прибор на stable1.8.2, не менять его на 1.10.11 автоматически. Сначала сохранить пресеты; в 1.8.2 вход в BOOT стирает settings. Official rollbackR03=1.8.2, не предыдущая 1.10.11; сохранение настроек при процедуре на железе не проверялось.
 
+Прошивает только человек, по одному файлу. Не менять основной Playtronica repo/worktree родителя, завод/stable/latest, settings.playtronica.com. Не отправлять файлы команде. Не создавать релизы. Полный firmware release — после явного «да» Сергея. HumanPASS от Playtron не переносится на Biotron.
 
-<!-- TABLE OF CONTENTS -->
-
-<details>
-
-  <summary>Table of Contents</summary>
-
-  <ol>
-    <li>
-      <a href="#about-the-project">About The Project</a>
-      <ul>
-        <li><a href="#built-with">Built With</a></li>
-      </ul>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#build-firmware-file">Build firmware file</a></li>
-        <li><a href="#load-firmware">Load Firmware</a></li>
-      </ul>
-    </li>
-    <li><a href="#biotrons-continuous-controllers-">Biotron's Continuous Controllers</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#contact">Contact</a></li>
-  </ol>
-
-</details>
-
-
-## About The Project
-
-### Biotron: A Plant-Responsive MIDI Device
-
-Biotron is a unique MIDI device that transforms the internal processes of plants into musical compositions. By connecting to a plant via electrodes, Biotron captures the plant's natural electrical resistance and translates it into MIDI signals, allowing you to create dynamic and evolving music that reflects the plant's interaction with its environment.
-
-### Key Features:
-
-- Plant Interaction: Biotron measures the plant's active resistance, capacitive resistance, and minimal inductive resistance to generate MIDI notes. The music changes in real-time as the plant's internal conditions, such as moisture and environmental factors, fluctuate.
-- Theremin-Like Playability: In addition to responding to the plant's internal state, Biotron also reacts to movements around the plant, similar to a theremin. This feature allows you to "play" the plant by moving your hands nearby, influencing the music.
-- Light Sensor Integration: Biotron includes a second MIDI channel connected to a light sensor. By adjusting light and shadows over the sensor, you can add another layer of musical interaction and depth to your compositions.
-- Customizable Generative Logic: With the help of Playtronica's online tool, you can adjust and fine-tune Biotron’s generative music logic, tailoring the device to your creative needs and exploring various soundscapes.
-- Versatile Connectivity: Biotron connects via USB and is compatible with DAWs on phones, computers, and hardware synthesizers, making it a flexible addition to any music production setup.
-
-Biotron provides a unique fusion of nature and technology, turning the life processes of plants into a living, evolving musical experience. Ideal for musicians, sound artists, and nature enthusiasts, Biotron offers an innovative way to explore the intersection of biology and music.
-
-
-### Built With
-
-* [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk)
-* [Docker](https://www.docker.com/)
-
-<p align="right">(<a href="#top">back to top</a>)</p>
-
-<!-- GETTING STARTED -->
-## Getting Started
-
-### Build firmware file
-
-
-1. Install docker, example for Ubuntu 20.04
-
-2. Clone the repo
-   ```sh
-   git clone https://github.com/manirko/biotron-firmware.git
-   ```
-3. Run the host safety suite
-   ```sh
-   ./tests/run_host_tests.sh
-   ```
-4. Configure/build with an explicit firmware version and the existing settings
-   compatibility ID. See [`DEVELOPING.md`](DEVELOPING.md) for the exact command.
-
-Do not use a timestamp as `FLASH_ID_STARTUP`: changing the settings identity
-silently resets user presets.
-
-
-### Load Firmware
-
-For loading device you need firmware file. You can get it in different ways:
-1) Build firmware by yourself. How to do it, you can read [here](#build-firmware-file)
-2) Load firmware from [releases](https://github.com/Playtronica/biotron-firmware/releases/latest)
-3) Use only a team-tested, version-aware Settings beta whose exact artifact is
-recorded in the test manifest. Do not use an updater which selects `latest`
-without validating the UF2 hash/version first.
-
-After that you need to turn on boot mode on device:
-
-1) A supported firmware can enter BOOT through the exact system SysEx described
-in [`DEVELOPING.md`](DEVELOPING.md); the updater must download and validate the
-artifact before sending BOOT.
-2) Unknown/older firmware must follow the version-specific Help procedure.
-Some old families cannot enter BOOT by MIDI; others reset stored settings.
-Use physical BOOT contacts only with the revision-correct guide.
-
-The device will be displayed as removable media (like a USB flash drive).
-You should transfer the resulting .uf2 file to the removable media that appeared.
-
-
-<p align="right">(<a href="#top">back to top</a>)</p>
-
-<!-- COMMANDS -->
-## Biotron's Continuous Controllers and SysEx
-**Continuous Controllers** and **SysEx** - MIDI messages, which are used to patch data for parameters.
-
-Get list of Biotron's CC and SysEx [here](SettingsDescription.md)
-
-<p align="right">(<a href="#top">back to top</a>)</p>
-
-<!-- CONTRIBUTING -->
-## Contributing
-
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
-Don't forget to give the project a star! Thanks again!
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-<p align="right">(<a href="#top">back to top</a>)</p>
-
-<!-- CONTACT -->
-## Contact
-
-* Project Link: [https://github.com/Playtronica/biotron-firmware](https://github.com/Playtronica/biotron-firmware)
-* Our website: [https://playtronica.com/](https://playtronica.com/)
-
-### Social media
-* [Facebook](https://www.facebook.com/playtronica)
-* [Instagram](http://instagram.com/playtronica)
-* [Twitter](https://twitter.com/playtronica)
-* [Youtube](https://www.youtube.com/playtronica)
-
-
-<p align="right">(<a href="#top">back to top</a>)</p>
-
-
-
-<!-- ACKNOWLEDGMENTS -->
-<!-- ## Acknowledgments
-* []()
-* []()
-* []()
-<p align="right">(<a href="#top">back to top</a>)</p> -->
-
-
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/Playtronica/Biotron.svg?style=for-the-badge
-[contributors-url]: https://github.com/Playtronica/Biotron/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/Playtronica/Biotron.svg?style=for-the-badge
-[forks-url]: https://github.com/Playtronica/Biotron/network/members
-[stars-shield]: https://img.shields.io/github/stars/Playtronica/Biotron.svg?style=for-the-badge
-[stars-url]: https://github.com/Playtronica/Biotron/stargazers
-[issues-shield]: https://img.shields.io/github/issues/Playtronica/Biotron.svg?style=for-the-badge
-[issues-url]: https://github.com/Playtronica/Biotron/issues
-[license-shield]: https://img.shields.io/github/license/Playtronica/Biotron.svg?style=for-the-badge
-[license-url]: https://github.com/Playtronica/Biotron/blob/master/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: https://linkedin.com/in/linkedin_username
+## Git
+Независимая папка `~/Projects/biotron-opxy-usb-fix-20261102`; текущая ветка `codex/biotron-opxy-usb-fix-1.10.11-20261102` → fork `manirko/biotron-firmware`. Отдельная stable ветка остаётся на 1.8.2. Upstream push URL заблокирован. В main/master не писать; push только тестовой ветки. Не создавать release/tag релиза.
+Договор: `~/.agents/skills/aiplay/SKILL.md`, `~/ProjectData/Playtronica/aiplay/TEAM-CONTRACT-v0.md`. Карточка `PVTI_lAHOAGy_zM4Bm3w-zhFcBUY`: https://github.com/users/manirko/projects/1/views/2 .

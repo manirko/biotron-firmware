@@ -190,11 +190,19 @@ def main() -> None:
     assert pid == 0x3011
     assert '"Playtronica"' in descriptors
     assert '"Biotron"' in descriptors
-    assert re.search(
-        r"TUD_CONFIG_DESCRIPTOR\(1,.*?TUD_CDC_DESCRIPTOR\(.*?TUD_MIDI_DESC_HEAD\(",
-        descriptors,
-        re.S,
+    fs_configuration = descriptors.split(
+        "uint8_t const desc_fs_configuration[] =", 1
+    )[1].split("};", 1)[0]
+    assert fs_configuration.index("TUD_MIDI_DESC_HEAD(") < (
+        fs_configuration.index("TUD_CDC_DESCRIPTOR(")
     )
+    device_descriptor = descriptors.split(
+        "tusb_desc_device_t const desc_device =", 1
+    )[1].split("};", 1)[0]
+    for field, value in (("bDeviceClass", "TUSB_CLASS_MISC"),
+                         ("bDeviceSubClass", "MISC_SUBCLASS_COMMON"),
+                         ("bDeviceProtocol", "MISC_PROTOCOL_IAD")):
+        assert re.search(rf"\.{field}\s*=\s*{value}", device_descriptor)
     assert "TUD_MIDI_JACKID_IN_EMB(1)" in descriptors
     assert "TUD_MIDI_JACKID_IN_EMB(2)" in descriptors
     assert "TUD_MIDI_JACKID_OUT_EMB(1)" in descriptors
