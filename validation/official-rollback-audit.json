@@ -1,0 +1,59 @@
+{
+  "sha256": "d2406d66225f76779331714b0a9df814d1c72d7f3640178f29adc9d3b45b4251",
+  "size_bytes": 99840,
+  "blocks": 195,
+  "payload_bytes": 49920,
+  "family": "RP2040",
+  "flash_start": "0x10000000",
+  "flash_end_exclusive": "0x1000c300",
+  "settings_start": "0x10080000",
+  "settings_not_touched": "PASS",
+  "usb_device_address": "0x1000a874",
+  "usb_configuration_address": "0x1000a888",
+  "vid": "0xcafe",
+  "pid": "0x3011",
+  "device_class_subclass_protocol": [
+    0,
+    0,
+    0
+  ],
+  "configuration_bytes": 199,
+  "interface_order": [
+    2,
+    3,
+    0,
+    1
+  ],
+  "endpoints": [
+    [
+      1,
+      2,
+      64
+    ],
+    [
+      2,
+      2,
+      64
+    ],
+    [
+      129,
+      2,
+      64
+    ],
+    [
+      130,
+      2,
+      64
+    ],
+    [
+      131,
+      3,
+      8
+    ]
+  ],
+  "midi_virtual_cables": 2,
+  "cdc": "retained",
+  "power_ma": 100,
+  "structure_and_descriptors": "PASS",
+  "file": "/Users/andreymanirko/ProjectData/biotron-opxy-usb-fix-20261102/official-download/biotron-firmware_v1.8.2.uf2"
+}
