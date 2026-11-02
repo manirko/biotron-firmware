@@ -114,3 +114,5 @@
 | `validation/candidate-checks.json` | Отчёт независимой проверки: candidate-checks. |
 | `validation/official-rollback-audit.json` | Отчёт независимой проверки: official-rollback-audit. |
 | `validation/stable-audit.json` | Отчёт независимой проверки: stable-audit. |
+
+- `REVIEW-PLSDK-20261102.md` — exact integration review, fixed regressions, upstream requirements and tester scope.

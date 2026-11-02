@@ -28,6 +28,10 @@ run_pair() {
 
 python3 tests/test_release_contract.py
 
+# The public entry header must not depend on TinyUSB include order.
+printf '#include "PLSDK.h"\n' | "$compiler" -std=c11 -Wall -Wextra -Werror \
+  -Wno-strict-prototypes -pedantic -fsyntax-only -I PLSDK/include -x c -
+
 run_pair midi-parser \
   -I PLSDK/include \
   PLSDK/src/midi_parser.c tests/test_midi_parser.c

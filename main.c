@@ -15,7 +15,6 @@
 
 
 void setup() {
-    stdio_init_all();
     midi_diagnostics_set_reset_reason(
             watchdog_enable_caused_reboot() ?
             MIDI_DIAGNOSTICS_RESET_WATCHDOG_TIMEOUT :
@@ -26,6 +25,7 @@ void setup() {
     // the zero-initialized global settings object.
     read_settings();
     init_midi();
+    stdio_init_all();
 
     adc_init();
     adc_gpio_init(LIGHT_PIN);

@@ -106,7 +106,6 @@ extern "C" {
 
 #define CFG_TUD_VENDOR            0
 
-#define LIB_TINYUSB_HOST 1
 
 // MIDI FIFO size of TX and RX
 #define CFG_TUD_MIDI_RX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)

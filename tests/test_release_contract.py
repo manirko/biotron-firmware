@@ -108,6 +108,8 @@ def main() -> None:
     assert "flash_range_program(FLASH_TARGET_OFFSET" in params
     assert "clear_flash" not in params
     assert main_source.index("read_settings();") < main_source.index("init_midi();")
+    assert main_source.index("init_midi();") < main_source.index("stdio_init_all();"), "USB must be initialized before Pico CDC stdio"
+    assert not re.search(r"^\s*#\s*define\s+LIB_TINYUSB_(?:HOST|DEVICE)\b", tusb_config, re.M), "SDK linkage flags belong to CMake, not tusb_config"
     assert main_source.index("read_settings();") < main_source.index("init_plant();")
 
     dispatcher = simple_function_body(params, "void get_sys_ex_and_behave()")

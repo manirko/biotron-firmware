@@ -1,3 +1,20 @@
+# Current review — 2 November 2026
+
+This isolated branch is `codex/biotron-plsdk-review-20261102`, based on today's
+USB Fix `6a26781`. The descriptor bytes, device identity, two cables, settings
+layout/ID and 1.10.11 musical behavior remain unchanged. Three small integration
+repairs are applied: initialize USB before CDC stdio, let CMake own TinyUSB linkage
+flags, and include stdbool in the public PLSDK header. See
+[PLSDK review](REVIEW-PLSDK-20261102.md) for proofs and upstream requirements.
+
+The inherited README below describes the **previous descriptor-only artifact**;
+its UF2 hash and binary proofs do not certify this new source. New builds and
+checks will be recorded for this branch. Physical acceptance remains NOT_RUN.
+The current explicit task permits a tester pre-release in `manirko`, never latest.
+Team sending, production/factory changes and physical flashing remain separate.
+
+## Inherited descriptor-only checkpoint (historical)
+
 # Biotron 1.10.11 · OP-XY USB Fix · тест 02.11.2026
 
 Отдельная прошивка для проверки USB MIDI на OP-XY, поверх существующего внутреннего кандидата Biotron1.10.11. Не официальный релиз.

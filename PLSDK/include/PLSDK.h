@@ -1,6 +1,8 @@
 #ifndef PLSDK_PLSDK_H
 #define PLSDK_PLSDK_H
 
+#include <stdbool.h>
+
 extern bool LOGGER_FLAG;
 
 
