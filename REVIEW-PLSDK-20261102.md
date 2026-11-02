@@ -75,3 +75,25 @@ PLSDK/include/PLSDK.h, main.c, PLSDK/src/PLSDK.c, commands.c, midi_parser.c,
 midi_tx.c and usb_descriptors.c; Pico SDK2.3.0 commit98a542c1, TinyUSB86ad6e56.
 Official web reader could not fetch the two pinned GitHub pages (cache miss);
 claims above use the actual pinned local source and ARM preprocessor, not snippets.
+
+## Exact candidate proof
+
+Built source:1fe17a762ac583856cc000d3d066bf4cd4c560a9.
+UF2:114176bytes, SHA256
+7900c23989635b8a35890a17bc2e3cc84735c781f77be2f4bee7ca94198c7f42.
+Two clean pinned ARM Release builds are byte-identical. USB device/configuration
+bytes equal today's6a26781; UF2 family/vectors/flash bounds and official rollback
+comparison pass. Settings source is unchanged. Original startup and host-marker
+faults are rejected by the new contract; original standalone header fails and
+repaired header compiles. Existing18host groups pass both lanes. Windows r2's
+45 selftests pass after the local HTTP fixture received sandbox permission;
+this is a Mac software check, not actual Windows/native/phone acceptance.
+
+Official Pico runtime reference (also read in this session):
+https://www.raspberrypi.com/documentation/pico-sdk/runtime.html#pico_stdio_usb
+The version-specific startup assertion is established by the pinned2.3.0 source
+and ARM preprocessor, not inferred from the generic documentation.
+
+Verdict: suitable to prepare an isolated internal tester candidate; not a
+production/factory release or a hardware-success claim. Outstanding SDK work
+above stays explicit, rather than entering this firmware silently.

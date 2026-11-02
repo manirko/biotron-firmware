@@ -1,0 +1,27 @@
+{
+  "source_commit": "1fe17a762ac583856cc000d3d066bf4cd4c560a9",
+  "two_clean_builds_equal": true,
+  "uf2_sha256": "7900c23989635b8a35890a17bc2e3cc84735c781f77be2f4bee7ca94198c7f42",
+  "uf2_bytes": 114176,
+  "descriptor_source_and_binary_unchanged_from_6a26781": true,
+  "settings_code_unchanged": true,
+  "host_groups": 18,
+  "host_lanes": [
+    "ASan+UBSan",
+    "optimized"
+  ],
+  "public_header": "PASS",
+  "fault_controls": [
+    {
+      "fault": "old_startup",
+      "result": "REJECTED"
+    },
+    {
+      "fault": "wrong_host_marker",
+      "result": "REJECTED"
+    }
+  ],
+  "physical_device_tests": "NOT_RUN",
+  "channel": "internal tester pre-release",
+  "new_usb_identity": false
+}
