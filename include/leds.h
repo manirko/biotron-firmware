@@ -2,14 +2,10 @@
 #define BIOTRON_LEDS_H
 
 #ifndef BIOTRON_LED_MUSIC_PULSE
-#define BIOTRON_LED_MUSIC_PULSE 0
+#error "BIOTRON_LED_MUSIC_PULSE must be supplied by CMake (0 or 1)"
 #endif
-
-#if BIOTRON_LED_MUSIC_PULSE
-#include <stdint.h>
 
 #include "led_engine.h"
-#endif
 
 #define GROUP_BlUE_LED_CENTER 1
 #define GROUP_BlUE_LED_LEFT 0
