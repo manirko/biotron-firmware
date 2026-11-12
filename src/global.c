@@ -159,6 +159,7 @@ uint32_t calibration_measured_noise(void) { return measured_calibration_noise; }
 
 uint32_t filter_freq(double val, double k) {
     static uint32_t filter_val = 0;
+    k = biotron_normalize_percent_setting(k, DEF_FILTER_PERCENT);
     if (filter_val == 0) {
         filter_val = val;
         return filter_val;

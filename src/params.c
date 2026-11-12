@@ -224,7 +224,7 @@ static bool stored_bool_bytes_valid(const uint8_t raw[sizeof(Settings_t)]) {
 }
 
 static bool stored_percent_valid(double value) {
-    /* 1..100 retains the released legacy percent migration. */
+    /* Ambiguous legacy values reach the per-field default, preserving others. */
     return isfinite(value) && value >= 0.0 && value <= 100.0;
 }
 
@@ -418,10 +418,12 @@ void set_fib_first_cc(uint8_t channel, uint8_t value) {
 }
 
 void set_filter_sys_ex(const uint8_t data[], uint8_t len) {
+    if (len != 1 || data[0] > 100) return;
     settings.filterPercent = (double )data[0] / 100;
 }
 
 void set_filter_cc(uint8_t channel, uint8_t value) {
+    if (value > 127) return;
     settings.filterPercent = (double )value / 127;
 }
 

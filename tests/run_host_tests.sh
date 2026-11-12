@@ -27,6 +27,7 @@ run_pair() {
 }
 
 python3 tests/test_release_contract.py
+python3 tests/test_led_flag.py
 
 # The public entry header must not depend on TinyUSB include order.
 printf '#include "PLSDK.h"\n' | "$compiler" -std=c11 -Wall -Wextra -Werror \
@@ -62,10 +63,20 @@ run_pair led-adapter \
   -I tests/stubs -I include -I PLSDK/include \
   src/led_engine.c src/leds.c tests/test_led_adapter.c
 
+run_pair led-adapter-legacy \
+  -Wno-strict-prototypes -DBIOTRON_LED_MUSIC_PULSE=0 \
+  -I tests/stubs -I include -I PLSDK/include \
+  src/leds.c tests/test_led_adapter.c
+
+run_pair time-wrap \
+  -Wno-strict-prototypes -Wno-unused-parameter \
+  -I tests/stubs -I PLSDK/include tests/test_time_wrap.c
+
 # These syntax checks make sure the production translation units compile with
 # the host stubs even when their focused runtime test links only selected code.
 "$compiler" -std=c11 -Wall -Wextra -Werror -Wno-strict-prototypes \
   -Wno-unused-parameter -pedantic -fsyntax-only \
+  -DBIOTRON_LED_MUSIC_PULSE=0 \
   -I tests/stubs -I include -I PLSDK/include src/music.c
 
 "$compiler" -std=c11 -Wall -Wextra -Werror -Wno-strict-prototypes \
@@ -111,7 +122,8 @@ run_pair note-lifecycle \
   src/music.c tests/test_note_lifecycle.c
 
 run_pair music-scheduler \
-  -Wno-strict-prototypes -I tests/stubs -I include -I PLSDK/include \
+  -Wno-strict-prototypes -DBIOTRON_LED_MUSIC_PULSE=0 \
+  -I tests/stubs -I include -I PLSDK/include \
   src/global.c tests/test_music_scheduler.c
 
 run_pair calibration-cue \

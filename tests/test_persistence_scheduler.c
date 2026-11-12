@@ -9,6 +9,7 @@
 #include "global.h"
 #include "PLSDK/commands.h"
 #include "PLSDK/midi_diagnostics.h"
+#include "PLSDK/music.h"
 #include "tusb.h"
 #include "hardware/flash.h"
 #include "hardware/sync.h"
@@ -19,6 +20,7 @@ bool LOGGER_FLAG = false;
 enum Status status = Active;
 enum Status active_status = Active;
 static uint64_t now_us;
+static uint32_t flash_elapsed_us, remind_elapsed_us, preset_notes;
 static uint32_t erase_calls, program_calls, boot_calls;
 static uint8_t flash_memory[FLASH_SECTOR_SIZE];
 #undef XIP_BASE
@@ -32,6 +34,7 @@ void restore_interrupts(uint32_t ignored) { (void)ignored; }
 void flash_range_erase(uint32_t offset,size_t count) {
     assert(offset==FLASH_TARGET_OFFSET && count<=sizeof flash_memory);
     memset(flash_memory,0xff,count);++erase_calls;
+    now_us += flash_elapsed_us;
 }
 void flash_range_program(uint32_t offset,const uint8_t *data,size_t count) {
     assert(offset==FLASH_TARGET_OFFSET && count<=sizeof flash_memory);
@@ -41,6 +44,14 @@ void reset_usb_boot(uint32_t mask,uint32_t interfaces) {
     assert(mask==0 && interfaces==0);++boot_calls;
 }
 void reset_bpm(void) { }
+void stop_bpm(void) { }
+int calculate_note_by_scale(uint8_t start, int counter, ScaleNums_t scale) {
+    (void)scale; return start + counter;
+}
+void note_on(uint8_t channel, uint8_t note, uint8_t velocity) {
+    (void)channel; (void)note; (void)velocity; ++preset_notes;
+}
+void note_off(uint8_t channel, uint8_t note) { (void)channel; (void)note; }
 void load_settings(void) { }
 static size_t calibration_calls, telemetry_calls, reference_calls, reference_reset_calls;
 void stop_plant_midi(void) { }
@@ -58,7 +69,7 @@ bool reset_calibration_reference(void) { ++reference_reset_calls; return true; }
 
 void bpm_clock_control(bool enabled) { (void)enabled; }
 void play_music_bpm_clock(void) { }
-void remind_midi(void) { }
+void remind_midi(void) { now_us += remind_elapsed_us; }
 void plsdk_printf(const char *format,...) { (void)format; }
 bool tud_midi_packet_read(uint8_t packet[4]) {
     if(queue_read==queue_write) return false;
@@ -117,6 +128,62 @@ static void test_scheduler(void) {
     assert(persistence_is_due(&scheduler, 10));
     puts("persistence_scheduler: debounce, coalescing and wrap passed");
     return;
+}
+
+static void test_filter_input_and_flash(void) {
+    settings = mixolyd;
+    save_settings();
+    for (uint16_t value = 101; value <= 127; ++value) {
+        const uint8_t message[] = {0xf0,0x14,0x0d,3,(uint8_t)value,0xf7};
+        const Settings_t before = settings;
+        enqueue_sysex(message, sizeof message);
+        get_sys_ex_and_behave();
+        assert(settings_equal(&before, &settings));
+        assert(!settings_save_scheduler.pending);
+    }
+    for (uint16_t value = 0; value <= 100; ++value) {
+        const uint8_t data[] = {(uint8_t)value};
+        set_filter_sys_ex(data, 1);
+        assert(settings.filterPercent == value / 100.0);
+        save_settings();
+        read_settings();
+        assert(settings.filterPercent == value / 100.0);
+    }
+    for (uint16_t value = 0; value <= 127; ++value) {
+        set_filter_cc(0, (uint8_t)value);
+        assert(settings.filterPercent == value / 127.0);
+        save_settings();
+        read_settings();
+        assert(settings.filterPercent == value / 127.0);
+    }
+    const Settings_t before = settings;
+    const uint8_t extra[] = {50, 0};
+    set_filter_sys_ex(NULL, 0);
+    set_filter_sys_ex(extra, 2);
+    for (uint16_t value = 128; value <= 255; ++value) {
+        set_filter_cc(0, (uint8_t)value);
+        const uint8_t data[] = {(uint8_t)value};
+        set_filter_sys_ex(data, 1);
+    }
+    assert(settings_equal(&before, &settings));
+
+    const double ambiguous[] = {1.01, 1.27, 2.0, 37.0, 100.0};
+    for (size_t i = 0; i < sizeof ambiguous / sizeof ambiguous[0]; ++i) {
+        Settings_t stored = mixolyd;
+        stored.filterPercent = ambiguous[i];
+        stored.fibPower = 0.73;
+        stored.firstValue = 0.21;
+        stored.plant_channel = 5;
+        memcpy(flash_memory, &stored, sizeof stored);
+        read_settings();
+        stored.filterPercent = DEF_FILTER_PERCENT;
+        assert(settings_equal(&stored, &settings));
+        const uint32_t saves = program_calls;
+        read_settings();
+        assert(settings_equal(&stored, &settings));
+        assert(program_calls == saves);
+    }
+    puts("filter_review: rejected SysEx101-127, valid ranges and ambiguous flash defaults passed");
 }
 
 int main(void) {
@@ -216,8 +283,8 @@ int main(void) {
         }
     }
     Settings_t legacy = mixolyd;
-    legacy.fibPower = 50;
-    legacy.firstValue = 10;
+    legacy.fibPower = 37;
+    legacy.firstValue = 80;
     memcpy(flash_memory, &legacy, sizeof legacy);
     read_settings();
     assert(settings.fibPower == 0.5 && settings.firstValue == 0.1);
@@ -325,8 +392,23 @@ int main(void) {
             assert(program_calls == saves);
         }
     }
+    test_filter_input_and_flash();
     puts("load_production: golden ABI, raw bool bytes, integer/percent domains and RAM fallback passed");
-    puts("percent_production: SysEx0-100, CC0-127, invalid input and legacy migration passed");
+    /* Real save diagnostics and preset feedback waits cross the us wrap. */
+    now_us = UINT32_MAX - UINT64_C(10);
+    flash_elapsed_us = 20;
+    settings = mixolyd;
+    save_settings();
+    midi_diagnostics_snapshot(&diagnostics);
+    assert(diagnostics.flash_critical_last_us == 20);
+    flash_elapsed_us = 0;
+    now_us = UINT32_MAX - UINT64_C(250000);
+    const uint64_t preset_start = now_us;
+    remind_elapsed_us = 10000;
+    set_next_preset();
+    assert(now_us - preset_start == 2000000 && preset_notes == 4);
+    puts("time_wrap: production flash duration and four preset waits passed");
+    puts("percent_production: SysEx0-100, CC0-127, invalid input and legacy defaults passed");
     puts("persistence_production: real changes, dirty no-ops, padding and invalid input passed");
     return 0;
 }

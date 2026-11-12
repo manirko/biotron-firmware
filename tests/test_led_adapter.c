@@ -23,7 +23,7 @@ bool button_top_pressed = false;
 bool LOGGER_FLAG = false;
 uint8_t last_note_plant = MIDDLE_NOTE;
 
-static uint32_t now_us = 0;
+static uint64_t now_us = 0;
 static uint16_t pwm_levels[32];
 
 uint64_t time_us_64(void) { return now_us; }
@@ -60,9 +60,11 @@ void pwm_set_gpio_level(uint gpio, uint16_t level) {
     pwm_levels[gpio] = level;
 }
 
+#if BIOTRON_LED_MUSIC_PULSE
 static uint16_t brightness(uint gpio) {
     return (uint16_t)(MAX_LIGHT - pwm_levels[gpio]);
 }
+#endif
 
 static void reset_fixture(void) {
     memset(&settings, 0, sizeof(settings));
@@ -81,6 +83,7 @@ static void reset_fixture(void) {
     led_loop();
 }
 
+#if BIOTRON_LED_MUSIC_PULSE
 static void test_spatial_pin_map_and_polarity(void) {
     reset_fixture();
     led_music_note_on(LED_SOURCE_LIGHT, 24, 127);
@@ -131,10 +134,58 @@ static void test_note_reaches_all_physical_zones(void) {
     assert(brightness(2) > 0);
 }
 
+static void music_frame_after(uint64_t start, uint16_t frame[32]) {
+    reset_fixture();
+    now_us = start;
+    init_leds();
+    led_music_note_on(LED_SOURCE_PLANT, 48, 127);
+    led_music_beat();
+    led_loop();
+    now_us += 32000;
+    led_loop();
+    memcpy(frame, pwm_levels, sizeof pwm_levels);
+}
+
+static void test_music_wrap_matches_normal_decay(void) {
+    uint16_t normal[32], wrapped[32];
+    music_frame_after(1000000, normal);
+    music_frame_after(UINT64_C(4294960000), wrapped);
+    assert(memcmp(normal, wrapped, sizeof normal) == 0);
+    /* The uint32 millisecond engine also crosses its own 49-day wrap. */
+    music_frame_after((UINT64_C(1) << 32) * 1000 - 8000, wrapped);
+    assert(memcmp(normal, wrapped, sizeof normal) == 0);
+}
+#endif
+
+extern void active_led_loop_light_bpm_sync(void);
+
+static uint16_t legacy_frame_after(uint64_t start, uint64_t elapsed) {
+    reset_fixture();
+    settings.BPM = 100000;
+    settings.lightBPM = 1;
+    now_us = start;
+    light_note_observer();
+    memset(pwm_levels, 0, sizeof pwm_levels);
+    now_us += elapsed;
+    active_led_loop_light_bpm_sync();
+    return pwm_levels[FIRST_GROUP_GREEN_LED_1];
+}
+
+static void test_legacy_wrap_and_expired_pulse(void) {
+    const uint16_t normal = legacy_frame_after(1000000, 32000);
+    assert(normal > 0);
+    assert(legacy_frame_after(UINT32_MAX - UINT64_C(16000), 32000) == normal);
+    assert(legacy_frame_after(1000000, (UINT64_C(1) << 32) + 32000) == 0);
+}
+
 int main(void) {
+#if BIOTRON_LED_MUSIC_PULSE
     test_spatial_pin_map_and_polarity();
     test_beat_and_mute_domains();
     test_note_reaches_all_physical_zones();
-    puts("led_adapter: A06-A08 pins, polarity, beat and mute passed");
+    test_music_wrap_matches_normal_decay();
+#endif
+    test_legacy_wrap_and_expired_pulse();
+    puts("led_adapter: pins, envelopes and microsecond/millisecond wrap passed");
     return 0;
 }

@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 #include "pico/time.h"
 #include "global.h"
@@ -49,6 +50,7 @@ static led_source_t last_led_source = LED_SOURCE_LIGHT;
 static uint8_t last_led_note = 0;
 static uint8_t last_led_velocity = 0;
 static uint16_t light_adc = 1600;
+static int calculated_light_note = -1;
 
 static void log_midi(uint8_t kind, uint8_t channel, uint8_t note) {
     assert(midi_log_len < sizeof midi_log / sizeof midi_log[0]);
@@ -105,7 +107,9 @@ bool cancel_alarm(alarm_id_t alarm_id) {
 int calculate_note_by_scale(uint8_t start_note, int counter,
                             ScaleNums_t scale) {
     (void)scale;
-    if (start_note != settings.middle_plant_note) return start_note + counter;
+    if (start_note != settings.middle_plant_note) {
+        return calculated_light_note >= 0 ? calculated_light_note : start_note + counter;
+    }
     return calculated_note;
 }
 
@@ -157,6 +161,7 @@ static void reset_fixture(void) {
     led_note_count = 0;
     led_beat_count = 0;
     light_adc = 1600;
+    calculated_light_note = -1;
 }
 
 static void test_identity_round_trip(void) {
@@ -272,6 +277,50 @@ static void test_light_requires_sensor_motion(void) {
     assert(count_event(LOG_NOTE_ON, 6, 47) == 1);
 }
 
+/* Exact skip predicate from 7471707 src/music.c:212 (1.9.8). */
+static bool legacy_198_skip(int note, int previous_note, int threshold) {
+    return abs(note - previous_note) < threshold;
+}
+
+static void light_at_counter(int counter, int note) {
+    const int step = MAX_OF_LIGHT / (settings.light_note_range * 2);
+    light_adc = (uint16_t)(MAX_OF_LIGHT / 2 - counter * step);
+    calculated_light_note = note;
+    midi_light();
+}
+
+static void test_same_note_light_compares_sensor_steps(void) {
+    reset_fixture();
+    settings.same_note_light = 0;
+    light_at_counter(0, 36);
+    light_at_counter(0, 36);
+    assert(count_event(LOG_NOTE_ON, 6, 36) == 1);
+    assert(!legacy_198_skip(36, 36, 0)); /* Old zero retriggered unchanged notes. */
+
+    reset_fixture();
+    settings.same_note_light = 1;
+    light_at_counter(0, 36);
+    light_at_counter(1, 38); /* A scale can turn one sensor step into two semitones. */
+    assert(count_event(LOG_NOTE_ON, 6, 38) == 0);
+    assert(!legacy_198_skip(38, 36, 1));
+    light_at_counter(2, 36); /* Clamping/scale can keep the same MIDI note. */
+    assert(count_event(LOG_NOTE_ON, 6, 36) == 2);
+    assert(legacy_198_skip(36, 36, 1));
+
+    reset_fixture();
+    settings.same_note_light = 3;
+    light_at_counter(0, 36);
+    light_at_counter(3, 42); /* Equality is skipped; reference remains at zero. */
+    assert(count_event(LOG_NOTE_ON, 6, 42) == 0);
+    light_at_counter(4, 44);
+    assert(count_event(LOG_NOTE_ON, 6, 44) == 1);
+    assert(!legacy_198_skip(39, 36, 3)); /* Old semitone boundary was strict < N. */
+    stop_light_midi();
+    light_at_counter(4, 44); /* First sample after reset always emits. */
+    assert(count_event(LOG_NOTE_ON, 6, 44) == 2);
+    puts("same_note_light: sensor delta > N; historical semitone < N differs (0/1/3)");
+}
+
 static void test_light_pitch_targets_the_plant_channel(void) {
     reset_fixture();
     midi_light_pitch();
@@ -299,6 +348,7 @@ int main(void) {
     test_cancelled_alarm_is_ignored();
     test_led_events_follow_emitted_notes_and_beats();
     test_light_requires_sensor_motion();
+    test_same_note_light_compares_sensor_steps();
     test_plant_mute_keeps_visual_feedback();
     test_light_pitch_targets_the_plant_channel();
     puts("note_lifecycle: identity, replacement, Clock, LED and failure passed");

@@ -36,7 +36,7 @@ static const uint8_t SECOND_GREEN_SPATIAL[LED_ENGINE_LANES] = {
 };
 
 static uint32_t led_now_ms(void) {
-    return time_us_32() / 1000u;
+    return (uint32_t)(time_us_64() / 1000u);
 }
 #endif
 
@@ -313,7 +313,7 @@ enum PulseSide {
     SecondGroupPulse
 } last_pulse_side = FirstGroupPulse;
 
-static uint32_t last_pulse_timestamp = 0;
+static uint64_t last_pulse_timestamp = 0;
 
 void light_note_observer() {
 //    uint8_t gpio_led_1 = last_pulse_side == FirstGroupPulse ? FIRST_GROUP_GREEN_LED_1 : SECOND_GROUP_GREEN_LED_1;
@@ -325,19 +325,20 @@ void light_note_observer() {
 //    pwm_set_gpio_level_invert(gpio_led_3, 0);
 
     last_pulse_side = last_pulse_side == FirstGroupPulse ? SecondGroupPulse : FirstGroupPulse;
-    last_pulse_timestamp = time_us_32();
+    last_pulse_timestamp = time_us_64();
 }
 
 void active_led_loop_light_bpm_sync() {
     const uint64_t time_light_bpm = (uint64_t)settings.BPM *
             biotron_effective_light_bpm(settings.lightBPM);
+    const uint64_t elapsed_us = time_us_64() - last_pulse_timestamp;
 
-    if (time_us_32() - last_pulse_timestamp > time_light_bpm) {
+    if (elapsed_us > time_light_bpm) {
         return;
     }
 
     uint8_t k = last_pulse_side == FirstGroupPulse ? mute_light() : mute_plant();
-    uint16_t value = (uint16_t)(MAX_LIGHT * ((double)(time_light_bpm - (time_us_32() - last_pulse_timestamp)) / time_light_bpm)) / k;
+    uint16_t value = (uint16_t)(MAX_LIGHT * ((double)(time_light_bpm - elapsed_us) / time_light_bpm)) / k;
 
     pwm_set_gpio_level_invert(FIRST_GROUP_GREEN_LED_1, value);
     pwm_set_gpio_level_invert(FIRST_GROUP_GREEN_LED_2, value);
