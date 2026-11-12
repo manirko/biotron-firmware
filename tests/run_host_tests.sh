@@ -63,6 +63,15 @@ run_pair led-adapter \
   -I tests/stubs -I include -I PLSDK/include \
   src/led_engine.c src/leds.c tests/test_led_adapter.c
 
+run_pair led-adapter-legacy \
+  -Wno-strict-prototypes -DBIOTRON_LED_MUSIC_PULSE=0 \
+  -I tests/stubs -I include -I PLSDK/include \
+  src/leds.c tests/test_led_adapter.c
+
+run_pair time-wrap \
+  -Wno-strict-prototypes -Wno-unused-parameter \
+  -I tests/stubs -I PLSDK/include tests/test_time_wrap.c
+
 # These syntax checks make sure the production translation units compile with
 # the host stubs even when their focused runtime test links only selected code.
 "$compiler" -std=c11 -Wall -Wextra -Werror -Wno-strict-prototypes \

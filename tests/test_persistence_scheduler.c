@@ -9,6 +9,7 @@
 #include "global.h"
 #include "PLSDK/commands.h"
 #include "PLSDK/midi_diagnostics.h"
+#include "PLSDK/music.h"
 #include "tusb.h"
 #include "hardware/flash.h"
 #include "hardware/sync.h"
@@ -19,6 +20,7 @@ bool LOGGER_FLAG = false;
 enum Status status = Active;
 enum Status active_status = Active;
 static uint64_t now_us;
+static uint32_t flash_elapsed_us, remind_elapsed_us, preset_notes;
 static uint32_t erase_calls, program_calls, boot_calls;
 static uint8_t flash_memory[FLASH_SECTOR_SIZE];
 #undef XIP_BASE
@@ -32,6 +34,7 @@ void restore_interrupts(uint32_t ignored) { (void)ignored; }
 void flash_range_erase(uint32_t offset,size_t count) {
     assert(offset==FLASH_TARGET_OFFSET && count<=sizeof flash_memory);
     memset(flash_memory,0xff,count);++erase_calls;
+    now_us += flash_elapsed_us;
 }
 void flash_range_program(uint32_t offset,const uint8_t *data,size_t count) {
     assert(offset==FLASH_TARGET_OFFSET && count<=sizeof flash_memory);
@@ -41,6 +44,14 @@ void reset_usb_boot(uint32_t mask,uint32_t interfaces) {
     assert(mask==0 && interfaces==0);++boot_calls;
 }
 void reset_bpm(void) { }
+void stop_bpm(void) { }
+int calculate_note_by_scale(uint8_t start, int counter, ScaleNums_t scale) {
+    (void)scale; return start + counter;
+}
+void note_on(uint8_t channel, uint8_t note, uint8_t velocity) {
+    (void)channel; (void)note; (void)velocity; ++preset_notes;
+}
+void note_off(uint8_t channel, uint8_t note) { (void)channel; (void)note; }
 void load_settings(void) { }
 static size_t calibration_calls, telemetry_calls, reference_calls, reference_reset_calls;
 void stop_plant_midi(void) { }
@@ -58,7 +69,7 @@ bool reset_calibration_reference(void) { ++reference_reset_calls; return true; }
 
 void bpm_clock_control(bool enabled) { (void)enabled; }
 void play_music_bpm_clock(void) { }
-void remind_midi(void) { }
+void remind_midi(void) { now_us += remind_elapsed_us; }
 void plsdk_printf(const char *format,...) { (void)format; }
 bool tud_midi_packet_read(uint8_t packet[4]) {
     if(queue_read==queue_write) return false;
@@ -326,6 +337,20 @@ int main(void) {
         }
     }
     puts("load_production: golden ABI, raw bool bytes, integer/percent domains and RAM fallback passed");
+    /* Real save diagnostics and preset feedback waits cross the us wrap. */
+    now_us = UINT32_MAX - UINT64_C(10);
+    flash_elapsed_us = 20;
+    settings = mixolyd;
+    save_settings();
+    midi_diagnostics_snapshot(&diagnostics);
+    assert(diagnostics.flash_critical_last_us == 20);
+    flash_elapsed_us = 0;
+    now_us = UINT32_MAX - UINT64_C(250000);
+    const uint64_t preset_start = now_us;
+    remind_elapsed_us = 10000;
+    set_next_preset();
+    assert(now_us - preset_start == 2000000 && preset_notes == 4);
+    puts("time_wrap: production flash duration and four preset waits passed");
     puts("percent_production: SysEx0-100, CC0-127, invalid input and legacy migration passed");
     puts("persistence_production: real changes, dirty no-ops, padding and invalid input passed");
     return 0;
