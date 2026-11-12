@@ -26,9 +26,9 @@ static inline uint8_t biotron_midi_channel(int value) {
 
 static inline double biotron_normalize_percent_setting(double value,
                                                         double fallback) {
-    if (!isfinite(value) || value < 0.0) return fallback;
-    if (value > 1.0) value /= 100.0;
-    return value > 1.0 ? 1.0 : value;
+    /* Old percentages and out-of-range SysEx fractions are indistinguishable. */
+    if (!isfinite(value) || value < 0.0 || value > 1.0) return fallback;
+    return value;
 }
 
 static inline uint32_t biotron_random_note_jitter(uint32_t random_value,

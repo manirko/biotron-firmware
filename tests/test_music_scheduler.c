@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "pico/time.h"
 #include "raw_plant.h"
@@ -10,6 +11,24 @@
 #include "params.h"
 
 extern uint32_t filter_freq(double val, double k);
+
+static void test_filter_rejects_unstable_coefficients(void) {
+    const double invalid[] = {1.01, 1.27, 37.0, -0.1, NAN, INFINITY};
+    for (size_t i = 0; i < sizeof invalid / sizeof invalid[0]; ++i) {
+        (void)filter_freq(0, 0);
+        assert(filter_freq(1000, 0) == 1000);
+        for (size_t sample = 0; sample < 100; ++sample) {
+            assert(filter_freq(2000, invalid[i]) == 2000);
+        }
+    }
+    (void)filter_freq(0, 0);
+    assert(filter_freq(1000, 0) == 1000);
+    assert(filter_freq(2000, 0.5) == 1500);
+    assert(filter_freq(2000, 0.5) == 1750);
+    assert(filter_freq(2000, 1) == 1750);
+    assert(filter_freq(2000, 0) == 2000);
+    (void)filter_freq(0, 0);
+}
 
 Settings_t settings;
 bool isMutedByButton = false;
@@ -123,6 +142,7 @@ static int64_t fire_alarm(void) {
 }
 
 int main(void) {
+    test_filter_rejects_unstable_coefficients();
     settings = (Settings_t){0};
     settings.BPM = 1000;
     settings.swing_first_note_percent = 60;

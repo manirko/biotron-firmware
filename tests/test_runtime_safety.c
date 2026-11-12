@@ -104,9 +104,11 @@ static void test_fibonacci_counter_is_bounded(void) {
     }
 }
 
-static void test_legacy_percent_values_are_normalized_once(void) {
+static void test_ambiguous_percent_values_use_defaults(void) {
     assert(biotron_normalize_percent_setting(50.0, 0.5) == 0.5);
     assert(biotron_normalize_percent_setting(10.0, 0.1) == 0.1);
+    assert(biotron_normalize_percent_setting(1.27, 0.0) == 0.0);
+    assert(biotron_normalize_percent_setting(37.0, 0.5) == 0.5);
     assert(biotron_normalize_percent_setting(0.5, 0.1) == 0.5);
     assert(biotron_normalize_percent_setting(-1.0, 0.1) == 0.1);
     assert(biotron_normalize_percent_setting(INFINITY, 0.1) == 0.1);
@@ -118,7 +120,7 @@ int main(void) {
     test_light_zero_preserves_every_beat_safely();
     test_pitch_is_valid_14_bit_midi();
     test_fibonacci_counter_is_bounded();
-    test_legacy_percent_values_are_normalized_once();
+    test_ambiguous_percent_values_use_defaults();
     puts("runtime_safety: arithmetic, liveness and MIDI boundaries passed");
     return 0;
 }

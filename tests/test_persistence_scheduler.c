@@ -130,6 +130,62 @@ static void test_scheduler(void) {
     return;
 }
 
+static void test_filter_input_and_flash(void) {
+    settings = mixolyd;
+    save_settings();
+    for (uint16_t value = 101; value <= 127; ++value) {
+        const uint8_t message[] = {0xf0,0x14,0x0d,3,(uint8_t)value,0xf7};
+        const Settings_t before = settings;
+        enqueue_sysex(message, sizeof message);
+        get_sys_ex_and_behave();
+        assert(settings_equal(&before, &settings));
+        assert(!settings_save_scheduler.pending);
+    }
+    for (uint16_t value = 0; value <= 100; ++value) {
+        const uint8_t data[] = {(uint8_t)value};
+        set_filter_sys_ex(data, 1);
+        assert(settings.filterPercent == value / 100.0);
+        save_settings();
+        read_settings();
+        assert(settings.filterPercent == value / 100.0);
+    }
+    for (uint16_t value = 0; value <= 127; ++value) {
+        set_filter_cc(0, (uint8_t)value);
+        assert(settings.filterPercent == value / 127.0);
+        save_settings();
+        read_settings();
+        assert(settings.filterPercent == value / 127.0);
+    }
+    const Settings_t before = settings;
+    const uint8_t extra[] = {50, 0};
+    set_filter_sys_ex(NULL, 0);
+    set_filter_sys_ex(extra, 2);
+    for (uint16_t value = 128; value <= 255; ++value) {
+        set_filter_cc(0, (uint8_t)value);
+        const uint8_t data[] = {(uint8_t)value};
+        set_filter_sys_ex(data, 1);
+    }
+    assert(settings_equal(&before, &settings));
+
+    const double ambiguous[] = {1.01, 1.27, 2.0, 37.0, 100.0};
+    for (size_t i = 0; i < sizeof ambiguous / sizeof ambiguous[0]; ++i) {
+        Settings_t stored = mixolyd;
+        stored.filterPercent = ambiguous[i];
+        stored.fibPower = 0.73;
+        stored.firstValue = 0.21;
+        stored.plant_channel = 5;
+        memcpy(flash_memory, &stored, sizeof stored);
+        read_settings();
+        stored.filterPercent = DEF_FILTER_PERCENT;
+        assert(settings_equal(&stored, &settings));
+        const uint32_t saves = program_calls;
+        read_settings();
+        assert(settings_equal(&stored, &settings));
+        assert(program_calls == saves);
+    }
+    puts("filter_review: rejected SysEx101-127, valid ranges and ambiguous flash defaults passed");
+}
+
 int main(void) {
     test_scheduler();
     midi_diagnostics_reset();
@@ -227,8 +283,8 @@ int main(void) {
         }
     }
     Settings_t legacy = mixolyd;
-    legacy.fibPower = 50;
-    legacy.firstValue = 10;
+    legacy.fibPower = 37;
+    legacy.firstValue = 80;
     memcpy(flash_memory, &legacy, sizeof legacy);
     read_settings();
     assert(settings.fibPower == 0.5 && settings.firstValue == 0.1);
@@ -336,6 +392,7 @@ int main(void) {
             assert(program_calls == saves);
         }
     }
+    test_filter_input_and_flash();
     puts("load_production: golden ABI, raw bool bytes, integer/percent domains and RAM fallback passed");
     /* Real save diagnostics and preset feedback waits cross the us wrap. */
     now_us = UINT32_MAX - UINT64_C(10);
@@ -351,7 +408,7 @@ int main(void) {
     set_next_preset();
     assert(now_us - preset_start == 2000000 && preset_notes == 4);
     puts("time_wrap: production flash duration and four preset waits passed");
-    puts("percent_production: SysEx0-100, CC0-127, invalid input and legacy migration passed");
+    puts("percent_production: SysEx0-100, CC0-127, invalid input and legacy defaults passed");
     puts("persistence_production: real changes, dirty no-ops, padding and invalid input passed");
     return 0;
 }
